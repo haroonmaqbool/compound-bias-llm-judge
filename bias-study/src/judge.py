@@ -11,9 +11,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── API clients ───────────────────────────────────────
-groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
+groq_client  = Groq(api_key=os.environ["GROQ_API_KEY"])
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+gemini_model = genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-1.5-flash"))
 
 # ── Shared prompt ─────────────────────────────────────
 JUDGE_PROMPT = """You are evaluating two responses to a question.
@@ -52,10 +52,14 @@ def judge_ollama(question: str, resp_a: str, resp_b: str) -> str:
 
 
 # ── Master dict — import this everywhere ─────────────
+_M70B     = os.getenv("GROQ_JUDGE_70B",     "llama-3.3-70b-versatile")
+_MMIXTRAL = os.getenv("GROQ_JUDGE_MIXTRAL", "mixtral-8x7b-32768")
+_MGEMMA   = os.getenv("GROQ_JUDGE_GEMMA",   "gemma2-9b-it")
+
 JUDGES = {
-    "llama3-70b": lambda q, a, b: judge_groq("llama3-70b-8192",    q, a, b),
-    "mixtral":    lambda q, a, b: judge_groq("mixtral-8x7b-32768", q, a, b),
-    "gemma2":     lambda q, a, b: judge_groq("gemma2-9b-it",       q, a, b),
+    "llama3-70b": lambda q, a, b: judge_groq(_M70B,     q, a, b),
+    "mixtral":    lambda q, a, b: judge_groq(_MMIXTRAL, q, a, b),
+    "gemma2":     lambda q, a, b: judge_groq(_MGEMMA,   q, a, b),
     "gemini":     judge_gemini,
     "llama3-8b":  judge_ollama,
 }

@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 client = Groq(api_key=os.environ["GROQ_API_KEY"])
-MODEL  = "llama3-70b-8192"
+MODEL  = os.getenv("GROQ_VARIANT_MODEL", "llama-3.3-70b-versatile")
 
 
 # ── Core variant generator ────────────────────────────────────────────────────
