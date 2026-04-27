@@ -3,8 +3,12 @@
 # Conditions: (position=first|second) × (length=short|long)
 # Saves incrementally to results/results.jsonl — resume-safe.
 
-import os, json
+import sys, os, json
 import pandas as pd
+
+# Ensure project root is on sys.path regardless of where this script is run from
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from src.judge import JUDGES, call_judge
 
 os.makedirs("results/raw", exist_ok=True)

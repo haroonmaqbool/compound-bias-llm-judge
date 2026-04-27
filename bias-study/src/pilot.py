@@ -2,7 +2,11 @@
 # Pilot run on first 10 pairs only.
 # Run this BEFORE the full experiment to catch API errors early.
 
-import json
+import sys, os, json
+
+# Ensure project root is on sys.path regardless of where this script is run from
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from src.experiment import run_experiment
 
 print("=" * 50)
