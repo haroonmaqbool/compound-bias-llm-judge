@@ -3,15 +3,28 @@
 # Returns 'A' or 'B' (winner label) for each pairwise comparison.
 
 import os, time
-from groq import Groq
+from groq import Groq, RateLimitError
 import google.generativeai as genai
 import ollama
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── API clients ───────────────────────────────────────
-groq_client  = Groq(api_key=os.environ["GROQ_API_KEY"])
+# ── Groq key pool (shared with variant_generator) ────
+_raw_keys    = os.getenv("GROQ_API_KEYS", os.getenv("GROQ_API_KEY", ""))
+_api_keys    = [k.strip() for k in _raw_keys.split(",") if k.strip()]
+_key_index   = 0
+_groq_clients = [Groq(api_key=k) for k in _api_keys]
+
+def _groq_client() -> Groq:
+    return _groq_clients[_key_index]
+
+def _rotate_key():
+    global _key_index
+    _key_index = (_key_index + 1) % len(_groq_clients)
+    print(f"  ↻ Groq key rotated → key[{_key_index+1}/{len(_groq_clients)}]")
+
+# ── Gemini ────────────────────────────────────────────
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 gemini_model = genai.GenerativeModel(os.getenv("GEMINI_MODEL", "gemini-1.5-flash"))
 
@@ -25,14 +38,20 @@ Which response is better? Reply with only 'A' or 'B'."""
 
 # ── Individual judge functions ────────────────────────
 def judge_groq(model_id: str, question: str, resp_a: str, resp_b: str) -> str:
+    global _key_index
     prompt = JUDGE_PROMPT.format(question=question, response_a=resp_a, response_b=resp_b)
-    result = groq_client.chat.completions.create(
-        model=model_id,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=5,
-    )
-    time.sleep(0.5)  # safe Groq pacing
-    return result.choices[0].message.content.strip().upper()
+    for _ in range(len(_groq_clients)):
+        try:
+            result = _groq_client().chat.completions.create(
+                model=model_id,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=5,
+            )
+            time.sleep(0.4)
+            return result.choices[0].message.content.strip().upper()
+        except RateLimitError:
+            _rotate_key()
+    return "ERROR"
 
 
 def judge_gemini(question: str, resp_a: str, resp_b: str) -> str:
