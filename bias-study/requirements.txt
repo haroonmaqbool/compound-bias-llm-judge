@@ -1,0 +1,13 @@
+groq
+google-generativeai
+transformers
+datasets
+scipy
+statsmodels
+pandas
+matplotlib
+seaborn
+sentencepiece
+torch
+ollama
+python-dotenv

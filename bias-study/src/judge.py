@@ -1,0 +1,81 @@
+# src/judge.py
+# Unified judge wrapper for all 5 models — $0 cost.
+# Returns 'A' or 'B' (winner label) for each pairwise comparison.
+
+import os, time
+from groq import Groq
+import google.generativeai as genai
+import ollama
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# ── API clients ───────────────────────────────────────
+groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+gemini_model = genai.GenerativeModel("gemini-1.5-flash")
+
+# ── Shared prompt ─────────────────────────────────────
+JUDGE_PROMPT = """You are evaluating two responses to a question.
+Question: {question}
+Response A: {response_a}
+Response B: {response_b}
+Which response is better? Reply with only 'A' or 'B'."""
+
+
+# ── Individual judge functions ────────────────────────
+def judge_groq(model_id: str, question: str, resp_a: str, resp_b: str) -> str:
+    prompt = JUDGE_PROMPT.format(question=question, response_a=resp_a, response_b=resp_b)
+    result = groq_client.chat.completions.create(
+        model=model_id,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=5,
+    )
+    time.sleep(0.5)  # safe Groq pacing
+    return result.choices[0].message.content.strip().upper()
+
+
+def judge_gemini(question: str, resp_a: str, resp_b: str) -> str:
+    prompt = JUDGE_PROMPT.format(question=question, response_a=resp_a, response_b=resp_b)
+    time.sleep(4)  # 15 req/min hard limit → 4s gap keeps you safe
+    response = gemini_model.generate_content(prompt)
+    return response.text.strip().upper()
+
+
+def judge_ollama(question: str, resp_a: str, resp_b: str) -> str:
+    prompt = JUDGE_PROMPT.format(question=question, response_a=resp_a, response_b=resp_b)
+    response = ollama.chat(
+        model="llama3:8b",
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response["message"]["content"].strip().upper()
+
+
+# ── Master dict — import this everywhere ─────────────
+JUDGES = {
+    "llama3-70b": lambda q, a, b: judge_groq("llama3-70b-8192",    q, a, b),
+    "mixtral":    lambda q, a, b: judge_groq("mixtral-8x7b-32768", q, a, b),
+    "gemma2":     lambda q, a, b: judge_groq("gemma2-9b-it",       q, a, b),
+    "gemini":     judge_gemini,
+    "llama3-8b":  judge_ollama,
+}
+
+
+def call_judge(judge_name: str, question: str, resp_a: str, resp_b: str) -> str:
+    """Safe wrapper — returns 'A', 'B', or 'ERROR'."""
+    try:
+        result = JUDGES[judge_name](question, resp_a, resp_b)
+        return result if result in ("A", "B") else "INVALID"
+    except Exception as e:
+        print(f"    [WARN] {judge_name} failed: {e}")
+        return "ERROR"
+
+
+if __name__ == "__main__":
+    # Quick smoke test — replace with real question/responses
+    q  = "What is the capital of France?"
+    a  = "The capital of France is Paris."
+    b  = "France's capital city is Paris, a major European metropolis."
+    for name in JUDGES:
+        verdict = call_judge(name, q, a, b)
+        print(f"  {name:15s} → {verdict}")
