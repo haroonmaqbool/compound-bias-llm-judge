@@ -25,7 +25,7 @@ def translate(text: str) -> str:
 
 def translate_pairs(pairs_path: str, output_path: str, limit: int = 50):
     pairs = []
-    with open(pairs_path) as f:
+    with open(pairs_path, encoding="utf-8") as f:
         for line in f:
             if line.strip():
                 pairs.append(json.loads(line))
@@ -45,7 +45,7 @@ def translate_pairs(pairs_path: str, output_path: str, limit: int = 50):
         }
         urdu_pairs.append(urdu_pair)
 
-        with open(output_path, "a") as f:
+        with open(output_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(urdu_pair, ensure_ascii=False) + "\n")
 
     print(f"\n✓ {len(urdu_pairs)} Urdu pairs saved to {output_path}")
