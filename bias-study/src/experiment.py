@@ -59,10 +59,10 @@ def run_experiment(
                 with open(output_file, "a") as f:
                     f.write(json.dumps(row) + "\n")
 
-        print(f"  ✓ Pair {i+1}/{len(pairs)} done")
+        print(f"  [OK] Pair {i+1}/{len(pairs)} done")
 
     df = pd.DataFrame(results)
-    print(f"\n✓ Experiment complete. {len(df)} rows saved to {output_file}")
+    print(f"\nExperiment complete. {len(df)} rows saved to {output_file}")
     return df
 
 

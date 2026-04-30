@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.experiment import run_experiment
 
 print("=" * 50)
-print("PILOT RUN — 10 pairs only")
+print("PILOT RUN - 10 pairs only")
 print("=" * 50)
 
 pairs = []
@@ -30,5 +30,5 @@ df = run_experiment(
 
 print("\nPilot results preview:")
 print(df.groupby(["judge", "position", "length"])["winner"].value_counts())
-print("\n✓ Pilot complete — check results/raw/pilot_results.jsonl")
+print("\nPilot complete - check results/raw/pilot_results.jsonl")
 print("  If everything looks right, run experiment.py for the full 80 pairs.")
