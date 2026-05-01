@@ -9,9 +9,10 @@
 #   4. gemini-flash — Google Gemini 2.0 Flash (google-genai SDK)
 #   5. llama3-8b    — Groq (llama-3.1-8b-instant)
 
-import os, re, time
+import os, re, time, warnings
+warnings.filterwarnings("ignore", category=FutureWarning, module="google")
 from groq import Groq, RateLimitError
-from google import genai as google_genai
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -30,9 +31,10 @@ def _rotate_key():
     _key_index = (_key_index + 1) % len(_groq_clients)
     print(f"  ↻ Groq key rotated → key[{_key_index+1}/{len(_groq_clients)}]")
 
-# ── Gemini (google-genai SDK) ─────────────────────────────────────────────────
-_gemini_client = google_genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-_GEMINI_MODEL  = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+# ── Gemini (google-generativeai SDK) ────────────────────────────────────────
+_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+_gemini_model = genai.GenerativeModel(_GEMINI_MODEL)
 
 # ── Shared judge prompt ───────────────────────────────────────────────────────
 JUDGE_PROMPT = """You are evaluating two responses to a question.
@@ -71,18 +73,15 @@ def judge_gemini(question: str, resp_a: str, resp_b: str) -> str:
     prompt = JUDGE_PROMPT.format(question=question, response_a=resp_a, response_b=resp_b)
     try:
         time.sleep(4)   # 15 req/min hard limit → 4s gap keeps us safe
-        response = _gemini_client.models.generate_content(
-            model=_GEMINI_MODEL,
-            contents=prompt,
-        )
+        response = _gemini_model.generate_content(prompt)
         raw = response.text.strip().upper()
         m = re.search(r"\b([AB])\b", raw)
         return m.group(1) if m else raw
     except Exception as e:
         err = str(e)
         if "RESOURCE_EXHAUSTED" in err or "429" in err:
-            # Daily quota hit — fall back to Groq gemma3
-            return judge_groq("gemma-3-27b-it" if False else _MGEMMA_FB, question, resp_a, resp_b)
+            # Daily quota hit — fall back to Groq
+            return judge_groq(_MGEMMA_FB, question, resp_a, resp_b)
         raise
 
 
