@@ -6,7 +6,7 @@
 #   1. llama3-70b   — Groq (llama-3.3-70b-versatile)
 #   2. qwen3-32b    — Groq (qwen/qwen3-32b)
 #   3. llama4-scout — Groq (meta-llama/llama-4-scout-17b-16e-instruct)
-#   4. gemini-flash — Google Gemini 2.0 Flash (google-genai SDK)
+#   4. gemini-flash — Google Gemini 2.0 Flash (google-generativeai SDK)
 #   5. llama3-8b    — Groq (llama-3.1-8b-instant)
 
 import os, re, time, warnings
@@ -81,7 +81,7 @@ def judge_gemini(question: str, resp_a: str, resp_b: str) -> str:
         err = str(e)
         if "RESOURCE_EXHAUSTED" in err or "429" in err:
             # Daily quota hit — fall back to Groq
-            return judge_groq(_MGEMMA_FB, question, resp_a, resp_b)
+            return judge_groq(_MFALLBACK, question, resp_a, resp_b)
         raise
 
 
@@ -89,8 +89,8 @@ def judge_gemini(question: str, resp_a: str, resp_b: str) -> str:
 _M70B     = os.getenv("GROQ_JUDGE_70B",      "llama-3.3-70b-versatile")
 _MQWEN    = os.getenv("GROQ_JUDGE_QWEN",     "qwen/qwen3-32b")
 _MLLAMA4  = os.getenv("GROQ_JUDGE_LLAMA4",   "meta-llama/llama-4-scout-17b-16e-instruct")
-_M8B      = os.getenv("GROQ_JUDGE_8B",       "llama-3.1-8b-instant")
-_MGEMMA_FB = os.getenv("GROQ_JUDGE_GEMMA_FB", "llama-3.1-8b-instant")  # Gemini quota fallback
+_M8B       = os.getenv("GROQ_JUDGE_8B",       "llama-3.1-8b-instant")
+_MFALLBACK = os.getenv("GROQ_JUDGE_GEMMA_FB", "llama-3.1-8b-instant")  # Gemini quota fallback
 
 # ── Master judge dict — import this everywhere ────────────────────────────────
 JUDGES = {
