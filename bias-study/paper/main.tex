@@ -1,41 +1,349 @@
-\documentclass[11pt,a4paper]{article}
+% main.tex — Compound Bias in LLM-as-a-Judge: A 2×2 Factorial Study
+% Target venue: EMNLP 2025  |  Template: ACL LaTeX
+%
+% Compile:
+%   pdflatex main.tex
+%   bibtex main
+%   pdflatex main.tex && pdflatex main.tex
+%
+% Figures are loaded from ../figures/  (relative to this file).
+% Tables are hard-coded from results/tables/*.csv values.
+
+\documentclass[11pt]{article}
+\usepackage[hyperref]{acl2023}   % swap for acl2025 when released
+
+% ── Core packages ─────────────────────────────────────────────────────────────
 \usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
 \usepackage{graphicx}
-\usepackage{amsmath}
-\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}            % \toprule \midrule \bottomrule
+\usepackage{multirow}
+\usepackage{xcolor}
 \usepackage{hyperref}
 \usepackage{natbib}
+\usepackage{microtype}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{subcaption}
 
-\title{Position Bias and Verbosity Bias in LLM-as-Judge Evaluation:\\
-A 2×2 Factorial Study}
-\author{Your Name}
-\date{\today}
+% ── Figure path ───────────────────────────────────────────────────────────────
+\graphicspath{{../figures/}}
+
+% ── Convenience macros ────────────────────────────────────────────────────────
+\newcommand{\eg}{\textit{e.g.}\xspace}
+\newcommand{\ie}{\textit{i.e.}\xspace}
+\newcommand{\etal}{\textit{et al.}\xspace}
+\newcommand{\pval}[1]{$p{=}#1$}
+\newcommand{\fstat}[2]{$F{=}#1,\;p{=}#2$}
+\newcommand{\etasq}[1]{$\eta^2{=}#1$}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\title{When Two Biases Compound:\\
+       Position and Verbosity Bias in LLM-as-a-Judge Evaluation}
+
+\author{
+  Haroon Maqbool \\
+  \texttt{haroon@example.com}
+}
 
 \begin{document}
 \maketitle
 
+% ═══════════════════════════════════════════════════════════════════════════════
 \begin{abstract}
-TODO: Abstract goes here.
+TODO (write last, after Results are finalised).
+LLM-as-a-Judge systems are widely used for scalable evaluation, yet
+their susceptibility to compound biases---interactions between
+positional preference and verbosity preference---remains unstudied.
+We present a 2$\times$2 factorial experiment across 5 judge models,
+3 datasets (MT-Bench, SummEval, Urdu MT-Bench), and 5{,}753 evaluation
+decisions. All five judges exhibit \textit{super-additive} compound
+bias ($F{=}351.6,\;p{<}10^{-75},\;\eta^2{=}0.058$), meaning the
+simultaneous presence of both biases inflates decision errors
+beyond the sum of individual effects. We release all code and data.
 \end{abstract}
 
+% ═══════════════════════════════════════════════════════════════════════════════
 \section{Introduction}
 \label{sec:intro}
 
+TODO. Motivate the study. Cite \citet{zheng2023judging} for MT-Bench,
+\citet{wang2023faireval} for position bias, \citet{raina2024judgebench}
+for judge reliability. State the gap: no prior work studies how multiple
+biases \emph{interact}. Summarise contributions (2--3 bullets).
+
+% ═══════════════════════════════════════════════════════════════════════════════
 \section{Related Work}
 \label{sec:related}
 
+TODO. Cover: (1) LLM-as-a-Judge \citep{zheng2023judging},
+(2) position bias \citep{wang2023faireval},
+(3) verbosity/length bias, (4) JudgeBench, RobustJudge.
+
+% ═══════════════════════════════════════════════════════════════════════════════
 \section{Experimental Design}
 \label{sec:design}
 
+\subsection{2$\times$2 Factorial Structure}
+
+We cross two binary factors:
+\textbf{Position} (which response appears first in the prompt: \textsc{First}/\textsc{Second})
+and \textbf{Length} (which response is longer: \textsc{Short}/\textsc{Long}).
+This yields four conditions per question--judge pair.
+Figure~\ref{fig:design} illustrates the design.
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{fig1_design_diagram.pdf}
+  \caption{The 2$\times$2 factorial design. Each cell shows which
+           variant occupies the Response~A and Response~B positions
+           in the judge prompt. \texttt{short\_a}/\texttt{long\_a}
+           are short/long rewrites of the original response~A;
+           \texttt{short\_b}/\texttt{long\_b} for response~B.}
+  \label{fig:design}
+\end{figure}
+
+\subsection{Datasets}
+
+\paragraph{MT-Bench (English).}
+We use the 80-question MT-Bench human judgment dataset
+\citep{zheng2023judging}.  Short/long variants are generated via
+Groq (\texttt{llama-3.1-8b-instant}) targeting $\approx$50\% and
+$\approx$150\% of the original length respectively.
+
+\paragraph{SummEval (English).}
+The SummEval benchmark \citep{fabbri2021summeval} provides 16
+machine-generated summaries per news article.  We select the shortest
+and longest summary per article as the Short and Long variants,
+yielding 100 pairs without synthetic generation.
+
+\paragraph{MT-Bench (Urdu).}
+We translate 50 MT-Bench pairs to Urdu using
+\texttt{Helsinki-NLP/opus-mt-en-ur} \citep{tiedemann2020opus},
+a freely available transformer model.  This probes whether compound
+bias is amplified in low-resource language settings.
+
+\subsection{Judge Models}
+
+Five judges are evaluated, all zero-cost:
+
+\begin{table}[h]
+  \centering
+  \small
+  \begin{tabular}{lll}
+    \toprule
+    \textbf{Judge ID} & \textbf{Model} & \textbf{Provider} \\
+    \midrule
+    llama3-70b   & Llama-3.3-70B-Versatile        & Groq (free tier) \\
+    qwen3-32b    & Qwen3-32B                      & Groq (free tier) \\
+    llama4-scout & Llama-4-Scout-17B              & Groq (free tier) \\
+    gemini-flash & Gemini-2.0-Flash-Lite          & Google AI Studio \\
+    llama3-8b    & Llama-3.1-8B-Instant           & Groq (free tier) \\
+    \bottomrule
+  \end{tabular}
+  \caption{Judge models used in all experiments.}
+  \label{tab:judges}
+\end{table}
+
+\subsection{Procedure and Scale}
+
+Each (question, judge) pair is evaluated under all four conditions,
+giving $N = 5{,}753$ total decisions across all datasets and languages.
+The judge prompt asks: \textit{``Which response is better? Reply with
+only `A' or `B'.''}  Results are logged incrementally to JSONL files
+and consolidated into a single master CSV for analysis.
+
+\subsection{Statistical Analysis}
+
+We model the binary outcome $\text{chose\_A} \in \{0,1\}$ using
+two-way OLS regression with Type~II sums of squares:
+\begin{equation}
+  \text{chose\_A} = \beta_0 + \beta_1\,\text{Position}
+                  + \beta_2\,\text{Length}
+                  + \beta_3\,(\text{Position} \times \text{Length})
+                  + \varepsilon
+\end{equation}
+We extract $F$-statistics, $p$-values, and $\eta^2$ (eta-squared)
+effect sizes for each term.
+A significant interaction ($p < 0.05$) with $\beta_3 > 0$ is classified
+as \textit{super-additive}; $\beta_3 < 0$ as \textit{sub-additive};
+non-significant as \textit{additive}.
+
+% ═══════════════════════════════════════════════════════════════════════════════
 \section{Results}
 \label{sec:results}
 
-\section{Analysis}
-\label{sec:analysis}
+\subsection{Overall 2-way ANOVA}
 
+Table~\ref{tab:anova_overall} reports the overall ANOVA pooling all
+5{,}753 decisions.
+
+\begin{table}[h]
+  \centering
+  \small
+  \begin{tabular}{lrrl}
+    \toprule
+    \textbf{Effect} & \textbf{F} & \textbf{p-value} & \textbf{$\eta^2$} \\
+    \midrule
+    Position            &   2.47 & 0.116               & 0.0004 \\
+    Length              &   1.56 & 0.211               & 0.0003 \\
+    Position × Length   & 351.59 & $3.4 \times 10^{-76}$ & \textbf{0.058} \\
+    Residual            & ---    & ---                 & 0.942 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Two-way ANOVA (Type~II SS) on the pooled dataset.
+           Neither main effect is significant; the interaction term
+           is highly significant with moderate effect size
+           ($\eta^2 = 0.058$).}
+  \label{tab:anova_overall}
+\end{table}
+
+\subsection{Per-Judge ANOVA and Interaction Classification}
+
+Table~\ref{tab:interaction} shows per-judge interaction coefficients
+and super-additive classification. Figure~\ref{fig:heatmap} visualises
+the response-A selection rate across all conditions.
+
+\begin{table}[h]
+  \centering
+  \small
+  \begin{tabular}{lrrrl}
+    \toprule
+    \textbf{Judge} & \textbf{F (interact.)} & \textbf{p} & \textbf{$\eta^2$} & \textbf{Class} \\
+    \midrule
+    llama3-70b   &  76.8 & $1.1\times10^{-17}$ & 0.089 & \textbf{Super-add.} \\
+    qwen3-32b    &  56.8 & $9.3\times10^{-14}$ & 0.044 & \textbf{Super-add.} \\
+    llama4-scout & 111.3 & $5.7\times10^{-25}$ & 0.082 & \textbf{Super-add.} \\
+    gemini-flash &  67.8 & $4.7\times10^{-16}$ & 0.052 & \textbf{Super-add.} \\
+    llama3-8b    &  65.2 & $1.6\times10^{-15}$ & 0.050 & \textbf{Super-add.} \\
+    \bottomrule
+  \end{tabular}
+  \caption{Per-judge interaction ANOVA and classification.
+           All five judges show statistically significant
+           super-additive compound bias.}
+  \label{tab:interaction}
+\end{table}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{fig2_bias_heatmap.pdf}
+  \caption{Response-A selection rate ($P(\text{chose A})$) per judge
+           and experimental condition. Values above 0.5 (red) indicate
+           A-preference; below 0.5 (blue) indicate B-preference.
+           The diagonal asymmetry reveals compound bias.}
+  \label{fig:heatmap}
+\end{figure}
+
+\subsection{Position Flip Rate and Length Bias}
+
+Figure~\ref{fig:fliprate} shows the position flip rate (how often
+swapping presentation order changes the verdict) and long-response
+win rate per judge.
+
+\begin{table}[h]
+  \centering
+  \small
+  \begin{tabular}{lrr}
+    \toprule
+    \textbf{Judge} & \textbf{Flip Rate} & \textbf{Long-Win Rate} \\
+    \midrule
+    llama3-70b   & 0.214 & --- \\
+    qwen3-32b    & 0.254 & --- \\
+    llama4-scout & 0.213 & --- \\
+    gemini-flash & 0.398 & --- \\
+    llama3-8b    & 0.450 & --- \\
+    \bottomrule
+  \end{tabular}
+  \caption{Position flip rate per judge. A flip rate above 0.5 indicates
+           purely order-driven decisions; llama3-8b approaches this threshold.}
+  \label{tab:fliprate}
+\end{table}
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{fig3_fliprate_bar.pdf}
+  \caption{Position flip rate (solid) and long-response win rate (hatched)
+           per judge. The dashed line marks the chance level (0.5).
+           Weaker models (\texttt{llama3-8b}) exhibit substantially
+           higher position sensitivity.}
+  \label{fig:fliprate}
+\end{figure}
+
+\subsection{Inter-Judge Agreement}
+
+Table~\ref{tab:kappa} reports pairwise Cohen's $\kappa$.
+
+\begin{table}[h]
+  \centering
+  \small
+  \begin{tabular}{llr}
+    \toprule
+    \textbf{Judge A} & \textbf{Judge B} & \textbf{$\kappa$} \\
+    \midrule
+    llama3-70b   & llama4-scout & 0.750 \\
+    llama3-70b   & qwen3-32b    & 0.529 \\
+    gemini-flash & llama3-8b    & 0.536 \\
+    gemini-flash & qwen3-32b    & 0.489 \\
+    gemini-flash & llama4-scout & 0.435 \\
+    gemini-flash & llama3-70b   & 0.390 \\
+    llama3-70b   & llama3-8b    & 0.363 \\
+    llama3-8b    & llama4-scout & 0.413 \\
+    llama3-8b    & qwen3-32b    & 0.463 \\
+    llama4-scout & qwen3-32b    & 0.587 \\
+    \bottomrule
+  \end{tabular}
+  \caption{Pairwise Cohen's $\kappa$ inter-judge agreement.
+           The llama3-70b / llama4-scout pair shows the strongest
+           agreement ($\kappa=0.75$, substantial); the lowest is
+           llama3-70b / llama3-8b ($\kappa=0.36$, fair).}
+  \label{tab:kappa}
+\end{table}
+
+\subsection{Cross-Dataset Comparison}
+
+Figure~\ref{fig:crossdataset} compares bias magnitude across
+MT-Bench (English), SummEval, and MT-Bench (Urdu).
+
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=\linewidth]{fig4_cross_dataset.pdf}
+  \caption{Position flip rate (left) and long-response win rate (right)
+           by dataset and language. Higher values indicate stronger bias.}
+  \label{fig:crossdataset}
+\end{figure}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Discussion}
+\label{sec:discussion}
+
+TODO. Interpret super-additivity: what it means practically.
+Why weaker models are more vulnerable. Cross-lingual findings.
+
+% ═══════════════════════════════════════════════════════════════════════════════
 \section{Conclusion}
 \label{sec:conclusion}
 
+TODO.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section*{Limitations}
+
+Our study has several limitations. First, the Groq and Gemini free tiers
+impose per-minute rate limits, requiring key rotation and occasional
+delays. Second, variant generation introduces minor paraphrasing artefacts;
+factual content is preserved but stylistic consistency is not guaranteed.
+Third, Urdu translation uses a sequence-to-sequence model with a 512-token
+limit, truncating longer responses. Fourth, we study only two bias types;
+future work should examine calibration bias, sycophancy, and self-preference.
+
+\section*{Ethics Statement}
+
+All datasets used (MT-Bench, SummEval) are publicly available under
+permissive licences. No human subjects were involved.
+API calls were made to free-tier services within their stated usage limits.
+
+% ═══════════════════════════════════════════════════════════════════════════════
 \bibliographystyle{acl_natbib}
 \bibliography{references}
 
