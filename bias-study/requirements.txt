@@ -11,3 +11,4 @@ sentencepiece
 torch
 ollama
 python-dotenv
+scikit-learn
