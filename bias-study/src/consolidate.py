@@ -1,7 +1,11 @@
-# src/consolidate.py
+# src/consolidate.py  — week3-fixes
 # Merges all raw JSONL result files into one clean master DataFrame.
 # Run after all experiments (MT-Bench, SummEval, Urdu) are complete.
 # Output: results/master_df.csv
+#
+# Fix (week3): drop_duplicates added — experiment.py was re-run multiple times,
+# causing duplicate (qid, judge, position, length, dataset, language) rows.
+# We keep the FIRST occurrence (earliest run) and discard re-run duplicates.
 
 import os, json
 import pandas as pd
@@ -49,11 +53,18 @@ df["winner"]   = df["winner"].astype(str)
 df["dataset"]  = df["dataset"].astype("category")
 df["language"] = df["language"].astype("category")
 
+# ── Deduplicate — fix for experiment.py being run multiple times ─────────────
+DEDUP_KEYS = ["dataset", "language", "qid", "judge", "position", "length"]
+before_dedup = len(df)
+df = df.drop_duplicates(subset=DEDUP_KEYS, keep="first")
+after_dedup  = len(df)
+print(f"\n  Removed {before_dedup - after_dedup} duplicate rows (experiment re-runs)")
+
 # Drop rows where judge errored
 before = len(df)
 df = df[df["winner"].isin(["A", "B"])]
 after  = len(df)
-print(f"\n  Dropped {before - after} error/invalid rows")
+print(f"  Dropped {before - after} error/invalid rows")
 
 # ── Save ─────────────────────────────────────────────
 os.makedirs("results", exist_ok=True)

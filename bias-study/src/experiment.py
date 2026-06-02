@@ -1,7 +1,10 @@
-# src/experiment.py
+# src/experiment.py  — week3-fixes
 # 2×2 Factorial Experiment Runner
 # Conditions: (position=first|second) × (length=short|long)
 # Saves incrementally to results/results.jsonl — resume-safe.
+#
+# Fix (week3): Added already-done key checking so re-running the script
+# never appends duplicate (qid, judge, position, length) rows.
 
 import sys, os, json
 import pandas as pd
@@ -12,6 +15,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.judge import JUDGES, call_judge
 
 os.makedirs("results/raw", exist_ok=True)
+
+
+def _load_done_keys(output_file: str) -> set:
+    """Return set of (qid, judge, position, length) already saved in output_file."""
+    done = set()
+    if not os.path.exists(output_file):
+        return done
+    with open(output_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                r = json.loads(line)
+                done.add((r["qid"], r["judge"], r["position"], r["length"]))
+            except Exception:
+                pass
+    return done
 
 
 def run_experiment(
@@ -30,6 +51,11 @@ def run_experiment(
     judge_names = judges_to_run or list(JUDGES.keys())
     results = []
 
+    # Fix (week3): load already-done keys to skip duplicate work on re-run
+    done_keys = _load_done_keys(output_file)
+    if done_keys:
+        print(f"  ↻ Resume: {len(done_keys)} (qid, judge, position, length) combos already done, skipping.")
+
     for i, pair in enumerate(pairs):
         q = pair["question"]
 
@@ -43,6 +69,10 @@ def run_experiment(
 
         for pos, length, resp_a, resp_b in conditions:
             for judge_name in judge_names:
+                key = (i, judge_name, pos, length)
+                if key in done_keys:   # Fix (week3): skip already-recorded rows
+                    continue
+
                 winner = call_judge(judge_name, q, resp_a, resp_b)
                 row = {
                     "qid":      i,
@@ -54,6 +84,7 @@ def run_experiment(
                     "language": language_tag,
                 }
                 results.append(row)
+                done_keys.add(key)   # mark as done immediately
 
                 # Incremental save — never lose progress
                 with open(output_file, "a") as f:

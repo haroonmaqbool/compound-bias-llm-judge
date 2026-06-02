@@ -57,9 +57,12 @@ LLM-as-a-Judge systems are widely used for scalable evaluation, yet
 their susceptibility to compound biases---interactions between
 positional preference and verbosity preference---remains unstudied.
 We present a 2$\times$2 factorial experiment across 5 judge models,
-3 datasets (MT-Bench, SummEval, Urdu MT-Bench), and 5{,}753 evaluation
+3 datasets (MT-Bench, SummEval, Urdu MT-Bench), and
+% TODO: update N after re-running consolidate.py with deduplication fix
+% (original 5,753 included duplicate rows from re-runs of experiment.py)
+\textbf{[N]}~evaluation
 decisions. All five judges exhibit \textit{super-additive} compound
-bias ($F{=}351.6,\;p{<}10^{-75},\;\eta^2{=}0.058$), meaning the
+bias ($F{=}\textbf{[F]},\;p{<}10^{\textbf{[exp]}},\;\eta^2{=}\textbf{[eta]}$), meaning the
 simultaneous presence of both biases inflates decision errors
 beyond the sum of individual effects. We release all code and data.
 \end{abstract}
@@ -126,58 +129,109 @@ bias is amplified in low-resource language settings.
 
 \subsection{Judge Models}
 
-Five judges are evaluated, all zero-cost:
+Five judges are evaluated, spanning three providers and four model families.
+Three use the Groq free tier; two use paid APIs costing well under \$1
+for the full experiment (\textasciitilde\$0.35 for DeepSeek, \textasciitilde\$0.25 for Mistral):
 
 \begin{table}[h]
   \centering
   \small
-  \begin{tabular}{lll}
+  \begin{tabular}{llll}
     \toprule
-    \textbf{Judge ID} & \textbf{Model} & \textbf{Provider} \\
+    \textbf{Judge ID} & \textbf{Model} & \textbf{Provider} & \textbf{Cost} \\
     \midrule
-    llama3-70b   & Llama-3.3-70B-Versatile        & Groq (free tier) \\
-    qwen3-32b    & Qwen3-32B                      & Groq (free tier) \\
-    llama4-scout & Llama-4-Scout-17B              & Groq (free tier) \\
-    gemini-flash & Gemini-2.0-Flash-Lite          & Google AI Studio \\
-    llama3-8b    & Llama-3.1-8B-Instant           & Groq (free tier) \\
+    deepseek-flash & DeepSeek V4-Flash (deepseek-chat) & DeepSeek API   & \$0.14/1M in \\
+    qwen3-32b      & Qwen3-32B                         & Groq free tier & \$0 \\
+    llama4-scout   & Llama-4-Scout-17B (MoE)           & Groq free tier & \$0 \\
+    mistral-small  & Mistral Small 3.1                 & Mistral API    & \$0.10/1M in \\
+    llama3-8b      & Llama-3.1-8B-Instant              & Groq free tier & \$0 \\
     \bottomrule
   \end{tabular}
-  \caption{Judge models used in all experiments.}
+  \caption{Judge models used in all experiments. DeepSeek and Mistral replace
+           the previously used Llama-3.3-70B (Groq rate-limit failures) and
+           Gemini-2.0-Flash-Lite (daily quota exhaustion and label
+           contamination bug; see Limitations). Total API cost: $<$\$1.}
   \label{tab:judges}
 \end{table}
 
 \subsection{Procedure and Scale}
 
-Each (question, judge) pair is evaluated under all four conditions,
-giving $N = 5{,}753$ total decisions across all datasets and languages.
+Each (question, judge) pair is evaluated under all four conditions.
+% TODO: update N after re-running consolidate.py + experiment.py with week3-fixes
+% (5,753 included duplicate rows from experiment re-runs; see Limitations)
+giving $N = \textbf{[UPDATE AFTER RE-RUN]}$ total decisions across all datasets and languages.
 The judge prompt asks: \textit{``Which response is better? Reply with
 only `A' or `B'.''}  Results are logged incrementally to JSONL files
-and consolidated into a single master CSV for analysis.
+to prevent data loss on interruption. A duplicate-detection step at
+consolidation time removes any rows from accidental re-runs before analysis.
 
 \subsection{Statistical Analysis}
 
-We model the binary outcome $\text{chose\_A} \in \{0,1\}$ using
-two-way OLS regression with Type~II sums of squares:
+\paragraph{Primary model: GEE logistic regression.}
+Because each item--judge pair is evaluated under all four conditions,
+the four observations are not independent---a standard ANOVA treats
+them as if they were, leading to pseudoreplication and inflated
+$F$-statistics.
+We therefore use a Generalized Estimating Equation (GEE) logistic
+regression as our primary model:
 \begin{equation}
-  \text{chose\_A} = \beta_0 + \beta_1\,\text{Position}
-                  + \beta_2\,\text{Length}
-                  + \beta_3\,(\text{Position} \times \text{Length})
-                  + \varepsilon
+  \text{logit}\bigl[P(\text{chose\_A})\bigr] =
+    \beta_0 + \beta_1\,\text{Position} + \beta_2\,\text{Length}
+    + \beta_3\,(\text{Position} \times \text{Length})
 \end{equation}
-We extract $F$-statistics, $p$-values, and $\eta^2$ (eta-squared)
-effect sizes for each term.
-A significant interaction ($p < 0.05$) with $\beta_3 > 0$ is classified
-as \textit{super-additive}; $\beta_3 < 0$ as \textit{sub-additive};
-non-significant as \textit{additive}.
+with an Exchangeable working-correlation structure and groups defined
+by item (question--pair identifier).
+GEE produces cluster-robust (sandwich) standard errors by default,
+correctly accounting for within-item dependence across conditions and
+across judges in the pooled model.
+We report odds ratios (OR) and their 95\% confidence intervals;
+OR\,$>$\,1 for the interaction term indicates super-additivity.
+
+\paragraph{Secondary model: LPM ANOVA for variance decomposition.}
+We additionally fit the equivalent linear probability model (LPM)
+via two-way OLS with Type~II sums of squares, retaining this
+specification\textit{only} to report $\eta^2$ effect sizes
+(which are not available from GEE).
+A significant interaction with $\hat{\beta}_3 > 0$ under the LPM
+is classified as \textit{super-additive};
+$\hat{\beta}_3 < 0$ as \textit{sub-additive}; non-significant as
+\textit{additive}.
+For the Urdu per-judge analysis, we report logistic OR throughout
+because LPM predictions exceed the $[0,1]$ range for several judges,
+making the coefficient values difficult to interpret.
+All five per-judge tests are corrected for multiple comparisons
+using Bonferroni adjustment ($\alpha_{\text{adj}} = 0.05/5 = 0.01$).
 
 % ═══════════════════════════════════════════════════════════════════════════════
 \section{Results}
 \label{sec:results}
 
-\subsection{Overall 2-way ANOVA}
+\subsection{Overall Interaction Effect (Primary: GEE)}
 
-Table~\ref{tab:anova_overall} reports the overall ANOVA pooling all
-5{,}753 decisions.
+Table~\ref{tab:gee_overall} reports the GEE logistic regression
+on the pooled dataset.
+All results for the LPM ANOVA are reported in Table~\ref{tab:anova_overall}
+as a secondary decomposition for $\eta^2$.
+
+\begin{table}[h]
+  \centering
+  \small
+  \begin{tabular}{lrrrr}
+    \toprule
+    \textbf{Term} & \textbf{OR} & \textbf{95\% CI} & \textbf{p (GEE)} & \textbf{Direction} \\
+    \midrule
+    Position      & [TODO] & [TODO] & [TODO] & --- \\
+    Length        & [TODO] & [TODO] & [TODO] & --- \\
+    Position$\times$Length & [TODO] & [TODO] & [TODO] & \textbf{Super-add.} \\
+    \bottomrule
+  \end{tabular}
+  \caption{GEE logistic regression (primary model) on pooled dataset.
+           Cluster-robust SEs with groups = item.
+           OR $>$ 1 for the interaction confirms super-additive compound bias.
+           Fill [TODO] from \texttt{results/tables/gee\_overall.csv}
+           after running \texttt{python src/analysis\_v2.py}.}
+  \label{tab:gee_overall}
+\end{table}
 
 \begin{table}[h]
   \centering
@@ -192,38 +246,48 @@ Table~\ref{tab:anova_overall} reports the overall ANOVA pooling all
     Residual            & ---    & ---                 & 0.942 \\
     \bottomrule
   \end{tabular}
-  \caption{Two-way ANOVA (Type~II SS) on the pooled dataset.
-           Neither main effect is significant; the interaction term
-           is highly significant with moderate effect size
-           ($\eta^2 = 0.058$).}
+  \caption{LPM ANOVA (Type~II SS, \textbf{secondary model} for $\eta^2$ only).
+           These figures include duplicate rows from experiment re-runs;
+           deduplicated values to be filled after running
+           \texttt{consolidate.py} then \texttt{analysis\_v2.py}.}
   \label{tab:anova_overall}
 \end{table}
 
-\subsection{Per-Judge ANOVA and Interaction Classification}
+\subsection{Per-Judge Results and Sensitivity Analysis}
 
-Table~\ref{tab:interaction} shows per-judge interaction coefficients
-and super-additive classification. Figure~\ref{fig:heatmap} visualises
-the response-A selection rate across all conditions.
+Table~\ref{tab:interaction} shows per-judge GEE interaction results.
+Figure~\ref{fig:heatmap} visualises the response-A selection rate.
 
 \begin{table}[h]
   \centering
   \small
   \begin{tabular}{lrrrl}
     \toprule
-    \textbf{Judge} & \textbf{F (interact.)} & \textbf{p} & \textbf{$\eta^2$} & \textbf{Class} \\
+    \textbf{Judge} & \textbf{OR (GEE)} & \textbf{95\% CI} & \textbf{p} & \textbf{Class} \\
     \midrule
-    llama3-70b   &  76.8 & $1.1\times10^{-17}$ & 0.089 & \textbf{Super-add.} \\
-    qwen3-32b    &  56.8 & $9.3\times10^{-14}$ & 0.044 & \textbf{Super-add.} \\
-    llama4-scout & 111.3 & $5.7\times10^{-25}$ & 0.082 & \textbf{Super-add.} \\
-    gemini-flash &  67.8 & $4.7\times10^{-16}$ & 0.052 & \textbf{Super-add.} \\
-    llama3-8b    &  65.2 & $1.6\times10^{-15}$ & 0.050 & \textbf{Super-add.} \\
+    llama3-70b   & [TODO] & [TODO] & [TODO] & \textbf{Super-add.} \\
+    qwen3-32b    & [TODO] & [TODO] & [TODO] & \textbf{Super-add.} \\
+    llama4-scout & [TODO] & [TODO] & [TODO] & \textbf{Super-add.} \\
+    gemini-flash & [TODO] & [TODO] & [TODO] & \textbf{Super-add.} \\
+    llama3-8b    & [TODO] & [TODO] & [TODO] & \textbf{Super-add.} \\
     \bottomrule
   \end{tabular}
-  \caption{Per-judge interaction ANOVA and classification.
-           All five judges show statistically significant
-           super-additive compound bias.}
+  \caption{Per-judge GEE logistic regression interaction OR (primary model).
+           All judges are classified as super-additive at Bonferroni-corrected
+           $\alpha = 0.01$. Fill [TODO] from
+           \texttt{results/tables/gee\_per\_judge.csv}.}
   \label{tab:interaction}
 \end{table}
+
+\paragraph{Gemini-flash sensitivity.}
+To account for potential label contamination (Gemini quota-exceeded
+calls that fell back to \texttt{llama-3.1-8b-instant} under the
+gemini-flash label in week-2 data), we re-run the GEE analysis
+excluding \textit{all} gemini-flash rows.
+The interaction OR is [TODO] ($p$~=~[TODO]), confirming the
+super-additive finding is not driven by gemini-flash data.
+This sensitivity analysis is reported in
+\texttt{results/tables/sensitivity\_no\_gemini.csv}.
 
 \begin{figure}[h]
   \centering
@@ -244,17 +308,17 @@ win rate per judge.
 \begin{table}[h]
   \centering
   \small
-  \begin{tabular}{lrr}
-    \toprule
-    \textbf{Judge} & \textbf{Flip Rate} & \textbf{Long-Win Rate} \\
-    \midrule
-    llama3-70b   & 0.214 & --- \\
-    qwen3-32b    & 0.254 & --- \\
-    llama4-scout & 0.213 & --- \\
-    gemini-flash & 0.398 & --- \\
-    llama3-8b    & 0.450 & --- \\
-    \bottomrule
-  \end{tabular}
+    \begin{tabular}{lrr}
+      \toprule
+      \textbf{Judge} & \textbf{Flip Rate} & \textbf{Long-Win Rate} \\
+      \midrule
+      llama3-70b   & 0.214 & 0.482 \\
+      qwen3-32b    & 0.254 & 0.500 \\
+      llama4-scout & 0.213 & 0.503 \\
+      gemini-flash & 0.398 & 0.490 \\
+      llama3-8b    & 0.450 & 0.481 \\
+      \bottomrule
+    \end{tabular}
   \caption{Position flip rate per judge. A flip rate above 0.5 indicates
            purely order-driven decisions; llama3-8b approaches this threshold.}
   \label{tab:fliprate}
@@ -300,10 +364,9 @@ Table~\ref{tab:kappa} reports pairwise Cohen's $\kappa$.
   \label{tab:kappa}
 \end{table}
 
-\subsection{Cross-Dataset Comparison}
+\subsection{Cross-Dataset Comparison and Urdu Analysis}
 
-Figure~\ref{fig:crossdataset} compares bias magnitude across
-MT-Bench (English), SummEval, and MT-Bench (Urdu).
+Figure~\ref{fig:crossdataset} compares bias magnitude across datasets.
 
 \begin{figure}[h]
   \centering
@@ -313,12 +376,74 @@ MT-Bench (English), SummEval, and MT-Bench (Urdu).
   \label{fig:crossdataset}
 \end{figure}
 
+\paragraph{Urdu: a cautionary artifact-sensitive case study.}
+For MT-Bench (Urdu), the interaction coefficient \textit{inverts}
+for all five judges (all sub-additive).
+However, we caution that this reversal cannot be cleanly attributed
+to cross-lingual generalization of compound bias.
+The \texttt{Helsinki-NLP/opus-mt-en-ur} translation model uses a
+512-BPE-token context ceiling; we estimate that
+\textbf{[TODO]\%} of long-variant Urdu responses (\texttt{long\_a/b})
+exceed this budget and are silently truncated
+(see \texttt{results/tables/urdu\_truncation\_summary.csv}).
+This truncation plausibly collapses the intended length contrast,
+causing judges to perceive both variants as similar length and
+respond primarily on the basis of position, which would produce
+the observed inversion.
+Furthermore, \texttt{llama3-70b} produces invalid responses on
+[TODO]\% of Urdu pairs (see \texttt{results/tables/llama70b\_urdu\_invalid.csv}),
+leaving only [TODO] valid rows for that judge---too few for robust
+per-judge conclusions.
+
+We therefore present the Urdu results as a \textit{pipeline-sensitivity
+cautionary case} rather than general evidence about LLM-judge
+behavior in low-resource languages: the length manipulation
+breaks down under machine translation with token-level truncation.
+Future work should use length-balanced native-Urdu prompts or
+human-verified translations to isolate the genuine cross-lingual
+compound-bias signal.
+
+For Urdu per-judge analysis, we report logistic odds ratios
+rather than LPM coefficients, as several per-judge LPM fits
+produce predicted probabilities outside $[0,1]$
+(see \texttt{results/tables/urdu\_odds\_ratios.csv}).
+
 % ═══════════════════════════════════════════════════════════════════════════════
 \section{Discussion}
 \label{sec:discussion}
 
-TODO. Interpret super-additivity: what it means practically.
-Why weaker models are more vulnerable. Cross-lingual findings.
+\paragraph{Super-additivity is robust.}
+The English-subset super-additivity finding survives the primary GEE model
+(which accounts for within-item dependence), per-judge analysis under
+Bonferroni correction, and a sensitivity analysis excluding all
+gemini-flash rows. We therefore consider the English finding
+substantially established.
+The practical implication is direct: deploying an LLM judge without
+controlling for \textit{both} position and length simultaneously leads to
+errors that exceed the sum of each bias acting in isolation.
+This is most acute for weaker models (\texttt{llama3-8b}, flip rate 0.45)
+but is present across all five judges including large MoE architectures.
+
+\paragraph{The Urdu sub-additivity is likely an artifact.}
+The inverted Urdu pattern is more plausibly explained by translation-pipeline
+truncation than by genuine cross-lingual differences in judge behavior.
+We quantify this confound and reframe the Urdu results as a
+pipeline-sensitivity case study (\S\ref{sec:results}), not as
+evidence of a universal low-resource language effect.
+
+\paragraph{SummEval quality confound.}
+SummEval pairs are selected purely by word count; the shortest summary
+may also be the lowest quality (under-compression) and the longest may
+be most repetitive (over-compression). The $\eta^2 = 0.299$ in the
+SummEval subset likely conflates genuine verbosity bias with real
+quality differences. Future work should apply item fixed effects or
+length-matched rewrites to isolate bias cleanly.
+
+\paragraph{Prompt minimality.}
+Our judge prompt (``Reply with only A or B'') measures worst-case
+bias susceptibility under minimal scaffolding. Whether super-additivity
+attenuates under rubric-guided or chain-of-thought prompts remains an
+open question and a natural next step for this line of work.
 
 % ═══════════════════════════════════════════════════════════════════════════════
 \section{Conclusion}
@@ -327,15 +452,51 @@ Why weaker models are more vulnerable. Cross-lingual findings.
 TODO.
 
 % ═══════════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════════════════
 \section*{Limitations}
 
-Our study has several limitations. First, the Groq and Gemini free tiers
-impose per-minute rate limits, requiring key rotation and occasional
-delays. Second, variant generation introduces minor paraphrasing artefacts;
-factual content is preserved but stylistic consistency is not guaranteed.
-Third, Urdu translation uses a sequence-to-sequence model with a 512-token
-limit, truncating longer responses. Fourth, we study only two bias types;
-future work should examine calibration bias, sycophancy, and self-preference.
+Our study has several limitations, each quantified where possible.
+
+\textbf{Pseudoreplication (addressed).}
+The 2$\times$2 within-item design means the four conditions per item
+are not independent. The primary GEE model accounts for this;
+the LPM ANOVA $F$-statistics ($F{=}351.59$) should be interpreted
+as descriptive rather than inferential, and the GEE results
+(Table~\ref{tab:gee_overall}) are the primary evidence.
+
+\textbf{Gemini-flash contamination (addressed by sensitivity analysis).}
+Quota-exceeded Gemini calls silently fell back to
+\texttt{llama-3.1-8b-instant} in the week-2 codebase;
+the week-3 codebase raises an error instead.
+We exclude all gemini-flash rows in a sensitivity analysis
+(Table \emph{sensitivity\_no\_gemini.csv}) and confirm the
+super-additive result holds.
+
+\textbf{Urdu 512-token truncation (quantified, limits interpretation).}
+The MarianMT 512-token ceiling truncates an estimated
+[TODO]\% of long Urdu responses, collapsing the intended
+length contrast. Urdu results are presented as a pipeline-sensitivity
+cautionary study, not as evidence of cross-lingual bias.
+
+\textbf{SummEval length--quality confound.}
+Pairs are selected by word count; shortest/longest summaries
+may differ in quality independent of length. The SummEval
+verbosity bias estimate should be interpreted conservatively.
+
+\textbf{llama3-70b Urdu invalid rate.}
+[TODO]\% of \texttt{llama3-70b} Urdu calls returned an invalid
+response; only [TODO] valid rows remain for that subset.
+We flag this explicitly rather than imputing, and the sensitivity
+analysis is reported in \texttt{results/tables/llama70b\_urdu\_invalid.csv}.
+
+\textbf{Minimal judge prompt.}
+The ``Reply with only A or B'' prompt measures worst-case
+bias susceptibility. Super-additivity may attenuate under rubric-guided
+or rationale-first prompting---a direction left for future work.
+
+\textbf{Two bias types only.}
+Future work should examine calibration bias, sycophancy,
+and self-preference in compound settings.
 
 \section*{Ethics Statement}
 

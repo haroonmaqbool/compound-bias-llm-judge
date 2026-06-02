@@ -1,4 +1,4 @@
-# src/figures.py — Week 2
+# src/figures.py — week3-fixes
 # Generates all 4 publication-ready figures as PDF (vector, 300 DPI).
 #
 # Figure 1: 2×2 factorial design diagram
@@ -26,12 +26,13 @@ FIG_DIR    = ROOT / "figures"
 FIG_DIR.mkdir(exist_ok=True)
 
 # ── Academic colour palette (colour-blind friendly) ───────────────────────────
+# week3-fixes: deepseek-flash replaces llama3-70b; mistral-small replaces gemini-flash
 PALETTE = {
-    "llama3-70b":   "#2E86AB",   # steel blue
-    "qwen3-32b":    "#E84855",   # coral red
-    "llama4-scout": "#3BB273",   # emerald
-    "gemini-flash": "#F18F01",   # amber
-    "llama3-8b":    "#7B2D8B",   # purple
+    "deepseek-flash": "#2E86AB",   # steel blue   (was llama3-70b)
+    "qwen3-32b":      "#E84855",   # coral red
+    "llama4-scout":   "#3BB273",   # emerald
+    "mistral-small":  "#F18F01",   # amber         (was gemini-flash)
+    "llama3-8b":      "#7B2D8B",   # purple
 }
 JUDGE_ORDER = list(PALETTE.keys())
 

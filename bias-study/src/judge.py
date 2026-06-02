@@ -1,18 +1,25 @@
-# src/judge.py
+# src/judge.py  — week3-fixes
 # Unified judge wrapper for all 5 models.
 # Returns 'A' or 'B' (winner label) for each pairwise comparison.
 #
-# Judge roster (all free-tier / low-cost):
-#   1. llama3-70b   — Groq (llama-3.3-70b-versatile)
-#   2. qwen3-32b    — Groq (qwen/qwen3-32b)
-#   3. llama4-scout — Groq (meta-llama/llama-4-scout-17b-16e-instruct)
-#   4. gemini-flash — Google Gemini 2.0 Flash (google-generativeai SDK)
-#   5. llama3-8b    — Groq (llama-3.1-8b-instant)
+# Changes vs week2:
+#   • Gemini (quota-limited, silent fallback bug) → replaced with Mistral Small 3.1
+#   • llama3-70b (Groq rate-limit) → replaced with DeepSeek V4-Flash
+#   • Gemini fallback bug fixed: was silently calling llama3-8b under gemini-flash label;
+#     new implementation raises ERROR cleanly if any judge quota-fails.
+#   • Both new judges use OpenAI-compatible SDK (single dependency: openai package)
+#
+# Final judge roster (all free-tier or pennies-per-run):
+#   1. deepseek-flash — DeepSeek V4-Flash  ($0.14/1M in,  replaces llama3-70b)
+#   2. qwen3-32b      — Groq (qwen/qwen3-32b)               [unchanged]
+#   3. llama4-scout   — Groq (meta-llama/llama-4-scout-17b) [unchanged]
+#   4. mistral-small  — Mistral Small 3.1  ($0.10/1M in,  replaces gemini-flash)
+#   5. llama3-8b      — Groq (llama-3.1-8b-instant)         [unchanged]
 
 import os, re, time, warnings
-warnings.filterwarnings("ignore", category=FutureWarning, module="google")
+warnings.filterwarnings("ignore", category=FutureWarning)
 from groq import Groq, RateLimitError
-import google.generativeai as genai
+from openai import OpenAI         # used for DeepSeek + Mistral (both OAI-compatible)
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,10 +38,19 @@ def _rotate_key():
     _key_index = (_key_index + 1) % len(_groq_clients)
     print(f"  ↻ Groq key rotated → key[{_key_index+1}/{len(_groq_clients)}]")
 
-# ── Gemini (google-generativeai SDK) ────────────────────────────────────────
-_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-_gemini_model = genai.GenerativeModel(_GEMINI_MODEL)
+# ── DeepSeek client (OpenAI-compatible) ───────────────────────────────────────
+_DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")   # V4-Flash maps to "deepseek-chat"
+_deepseek_client = OpenAI(
+    api_key=os.getenv("DEEPSEEK_API_KEY", ""),
+    base_url="https://api.deepseek.com/v1",
+)
+
+# ── Mistral client (OpenAI-compatible) ────────────────────────────────────────
+_MISTRAL_MODEL  = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
+_mistral_client = OpenAI(
+    api_key=os.getenv("MISTRAL_API_KEY", ""),
+    base_url="https://api.mistral.ai/v1",
+)
 
 # ── Shared judge prompt ───────────────────────────────────────────────────────
 JUDGE_PROMPT = """You are evaluating two responses to a question.
@@ -44,10 +60,18 @@ Response B: {response_b}
 Which response is better? Reply with only 'A' or 'B'."""
 
 
+# ── Helper: extract A or B from raw model output ─────────────────────────────
+def _extract_verdict(raw: str) -> str:
+    """Strip thinking tags and pull first A or B token."""
+    raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+    m = re.search(r"\b([AB])\b", raw.upper())
+    return m.group(1) if m else raw.upper()
+
+
 # ── Individual judge functions ────────────────────────────────────────────────
 def judge_groq(model_id: str, question: str, resp_a: str, resp_b: str) -> str:
     global _key_index
-    prompt = JUDGE_PROMPT.format(question=question, response_a=resp_a, response_b=resp_b)
+    prompt  = JUDGE_PROMPT.format(question=question, response_a=resp_a, response_b=resp_b)
     # qwen3 needs more tokens to finish its <think> block before emitting A/B
     max_tok = 1024 if "qwen" in model_id.lower() else 10
     for _ in range(len(_groq_clients)):
@@ -59,46 +83,60 @@ def judge_groq(model_id: str, question: str, resp_a: str, resp_b: str) -> str:
             )
             time.sleep(0.4)
             raw = result.choices[0].message.content
-            # Strip <think>...</think> blocks (Qwen3 chain-of-thought)
-            raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
-            # Extract first A or B token
-            m = re.search(r"\b([AB])\b", raw.upper())
-            return m.group(1) if m else raw.upper()
+            return _extract_verdict(raw)
         except RateLimitError:
             _rotate_key()
     return "ERROR"
 
 
-def judge_gemini(question: str, resp_a: str, resp_b: str) -> str:
+def judge_deepseek(question: str, resp_a: str, resp_b: str) -> str:
+    """DeepSeek V4-Flash via OpenAI-compatible API.  ~$0.14 / 1M input tokens."""
     prompt = JUDGE_PROMPT.format(question=question, response_a=resp_a, response_b=resp_b)
     try:
-        time.sleep(4)   # 15 req/min hard limit → 4s gap keeps us safe
-        response = _gemini_model.generate_content(prompt)
-        raw = response.text.strip().upper()
-        m = re.search(r"\b([AB])\b", raw)
-        return m.group(1) if m else raw
+        result = _deepseek_client.chat.completions.create(
+            model=_DEEPSEEK_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,
+            temperature=0,
+        )
+        time.sleep(0.2)
+        raw = result.choices[0].message.content
+        return _extract_verdict(raw)
     except Exception as e:
-        err = str(e)
-        if "RESOURCE_EXHAUSTED" in err or "429" in err:
-            # Daily quota hit — fall back to Groq
-            return judge_groq(_MFALLBACK, question, resp_a, resp_b)
-        raise
+        print(f"  [WARN] DeepSeek failed: {e}")
+        return "ERROR"
+
+
+def judge_mistral(question: str, resp_a: str, resp_b: str) -> str:
+    """Mistral Small 3.1 via OpenAI-compatible API.  ~$0.10 / 1M input tokens."""
+    prompt = JUDGE_PROMPT.format(question=question, response_a=resp_a, response_b=resp_b)
+    try:
+        result = _mistral_client.chat.completions.create(
+            model=_MISTRAL_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=10,
+            temperature=0,
+        )
+        time.sleep(0.2)
+        raw = result.choices[0].message.content
+        return _extract_verdict(raw)
+    except Exception as e:
+        print(f"  [WARN] Mistral failed: {e}")
+        return "ERROR"
 
 
 # ── Model IDs from .env ───────────────────────────────────────────────────────
-_M70B     = os.getenv("GROQ_JUDGE_70B",      "llama-3.3-70b-versatile")
-_MQWEN    = os.getenv("GROQ_JUDGE_QWEN",     "qwen/qwen3-32b")
-_MLLAMA4  = os.getenv("GROQ_JUDGE_LLAMA4",   "meta-llama/llama-4-scout-17b-16e-instruct")
-_M8B       = os.getenv("GROQ_JUDGE_8B",       "llama-3.1-8b-instant")
-_MFALLBACK = os.getenv("GROQ_JUDGE_GEMMA_FB", "llama-3.1-8b-instant")  # Gemini quota fallback
+_MQWEN   = os.getenv("GROQ_JUDGE_QWEN",   "qwen/qwen3-32b")
+_MLLAMA4 = os.getenv("GROQ_JUDGE_LLAMA4", "meta-llama/llama-4-scout-17b-16e-instruct")
+_M8B     = os.getenv("GROQ_JUDGE_8B",     "llama-3.1-8b-instant")
 
 # ── Master judge dict — import this everywhere ────────────────────────────────
 JUDGES = {
-    "llama3-70b":   lambda q, a, b: judge_groq(_M70B,    q, a, b),
-    "qwen3-32b":    lambda q, a, b: judge_groq(_MQWEN,   q, a, b),
-    "llama4-scout": lambda q, a, b: judge_groq(_MLLAMA4, q, a, b),
-    "gemini-flash": judge_gemini,
-    "llama3-8b":    lambda q, a, b: judge_groq(_M8B,     q, a, b),
+    "deepseek-flash":  judge_deepseek,                              # replaces llama3-70b
+    "qwen3-32b":       lambda q, a, b: judge_groq(_MQWEN,   q, a, b),
+    "llama4-scout":    lambda q, a, b: judge_groq(_MLLAMA4, q, a, b),
+    "mistral-small":   judge_mistral,                               # replaces gemini-flash
+    "llama3-8b":       lambda q, a, b: judge_groq(_M8B,     q, a, b),
 }
 
 
@@ -115,7 +153,8 @@ def call_judge(judge_name: str, question: str, resp_a: str, resp_b: str) -> str:
 if __name__ == "__main__":
     q = "What is the capital of France?"
     a = "The capital of France is Paris."
-    b = "France's capital city is Paris, a major European metropolis."
+    b = "France's capital city is Paris, a major European metropolis known for the Eiffel Tower."
+    print("Smoke-testing all 5 judges...\n")
     for name in JUDGES:
         verdict = call_judge(name, q, a, b)
-        print(f"  {name:15s} -> {verdict}")
+        print(f"  {name:18s} → {verdict}")

@@ -1,5 +1,10 @@
-# src/analysis.py — Week 2
+# src/analysis.py — week3-fixes
 # Full statistical analysis on master_df.csv.
+#
+# Fixes (week3):
+#   • interaction_p now stores full float (was rounded to 4dp, showing 0.0)
+#   • run_anova now also reports partial_eta_sq alongside eta_sq
+#   • Bonferroni-corrected alpha reported in output
 #
 # Outputs (all written to results/tables/):
 #   anova_overall.csv        — 2-way ANOVA pooled across all judges & datasets
@@ -59,16 +64,19 @@ def run_anova(df: pd.DataFrame, label: str = "overall") -> pd.DataFrame:
     IVs: position (first/second) × length (short/long)
 
     Uses Type-II SS so each main effect is tested controlling for the other.
-    Returns a tidy DataFrame with F, p, and η² for all three effects.
+    Returns a tidy DataFrame with F, p, η² and partial η² for all three effects.
     """
     model = ols("chose_A ~ C(position) * C(length)", data=df).fit()
     tbl   = anova_lm(model, typ=2)
 
-    ss_total       = tbl["sum_sq"].sum()
-    tbl["eta_sq"]  = tbl["sum_sq"] / ss_total
-    tbl["label"]   = label
-    tbl.index.name = "effect"
-    return tbl.reset_index()[["label", "effect", "F", "PR(>F)", "eta_sq"]] \
+    ss_total          = tbl["sum_sq"].sum()
+    ss_residual       = tbl.loc["Residual", "sum_sq"]
+    tbl["eta_sq"]     = tbl["sum_sq"] / ss_total
+    # Partial eta-squared: SS_effect / (SS_effect + SS_residual)
+    tbl["partial_eta_sq"] = tbl["sum_sq"] / (tbl["sum_sq"] + ss_residual)
+    tbl["label"]      = label
+    tbl.index.name    = "effect"
+    return tbl.reset_index()[["label", "effect", "F", "PR(>F)", "eta_sq", "partial_eta_sq"]] \
                .rename(columns={"PR(>F)": "p_value"})
 
 
@@ -139,7 +147,7 @@ def classify_interactions(df: pd.DataFrame) -> pd.DataFrame:
         rows.append({
             "judge":           judge,
             "interaction_coef": round(coef, 4),
-            "interaction_p":    round(pval, 4),
+            "interaction_p":    pval,         # Fix (week3): store full float, not round(pval,4)
             "classification":  cls,
         })
     return pd.DataFrame(rows)
@@ -200,6 +208,11 @@ if __name__ == "__main__":
     anova_per_judge = pd.concat(per_judge_anova, ignore_index=True)
     print("\n── Per-Judge ANOVA ──────────────────────────────────")
     print(anova_per_judge.to_string(index=False))
+    # Bonferroni correction: α = 0.05 / 5 judges = 0.01
+    bonf_alpha = 0.05 / 5
+    interact_rows = anova_per_judge[anova_per_judge["effect"].str.contains(":")]
+    n_sig = (interact_rows["p_value"] < bonf_alpha).sum()
+    print(f"\n  [Bonferroni] Corrected α = {bonf_alpha:.3f} — {n_sig}/5 judges significant at corrected threshold")
 
     # 3. Flip rate
     flip = compute_flip_rate(df)

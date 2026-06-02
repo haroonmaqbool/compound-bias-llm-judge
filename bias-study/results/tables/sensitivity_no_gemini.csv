@@ -1,0 +1,5 @@
+label,term,coef,OR,OR_lo95,OR_hi95,p_value,p_bonf_5,sig_bonf
+overall_no_gemini,Intercept,0.5024,1.6527,1.3449,2.031,1.7744066473538001e-06,8.872033236769002e-06,True
+overall_no_gemini,C(position)[T.second],-0.9075,0.4035,0.2731,0.5963,5.231355315138663e-06,2.6156776575693316e-05,True
+overall_no_gemini,C(length)[T.short],-0.8678,0.4199,0.307,0.5743,5.631583154213756e-08,2.8157915771068777e-07,True
+overall_no_gemini,C(position)[T.second]:C(length)[T.short],1.8915,6.6294,3.6166,12.1518,9.477765599358013e-10,4.738882799679006e-09,True

@@ -1,5 +1,5 @@
 groq
-google-generativeai
+openai                  # used for DeepSeek + Mistral (both OAI-compatible APIs)
 transformers
 datasets
 scipy
@@ -9,6 +9,5 @@ matplotlib
 seaborn
 sentencepiece
 torch
-ollama
 python-dotenv
 scikit-learn
