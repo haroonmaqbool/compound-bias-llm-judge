@@ -47,30 +47,39 @@ def run_experiment(
         question, short_a, long_a, short_b, long_b
 
     Each pair produces 4 conditions × N judges rows.
+
+    Loop order: judge-first → pair → condition
+    This keeps each Ollama model loaded in VRAM for ALL its calls before
+    switching to the next model, eliminating repeated load/unload overhead.
     """
     judge_names = judges_to_run or list(JUDGES.keys())
-    results = []
 
     # Fix (week3): load already-done keys to skip duplicate work on re-run
     done_keys = _load_done_keys(output_file)
     if done_keys:
         print(f"  ↻ Resume: {len(done_keys)} (qid, judge, position, length) combos already done, skipping.")
 
-    for i, pair in enumerate(pairs):
-        q = pair["question"]
+    # ── Judge-first loop: load model once, process all pairs ─────────────────
+    for judge_name in judge_names:
+        judge_done = sum(1 for k in done_keys if k[1] == judge_name)
+        total_for_judge = len(pairs) * 4
+        remaining = total_for_judge - judge_done
+        print(f"\n── Judge: {judge_name}  ({judge_done}/{total_for_judge} already done, {remaining} remaining) ──")
 
-        # ── 4 conditions of the 2×2 design ───────────
-        conditions = [
-            ("first",  "short", pair["short_a"], pair["long_b"]),
-            ("first",  "long",  pair["long_a"],  pair["short_b"]),
-            ("second", "short", pair["long_b"],  pair["short_a"]),
-            ("second", "long",  pair["short_b"], pair["long_a"]),
-        ]
+        for i, pair in enumerate(pairs):
+            q = pair["question"]
 
-        for pos, length, resp_a, resp_b in conditions:
-            for judge_name in judge_names:
+            # ── 4 conditions of the 2×2 design ───────────
+            conditions = [
+                ("first",  "short", pair["short_a"], pair["long_b"]),
+                ("first",  "long",  pair["long_a"],  pair["short_b"]),
+                ("second", "short", pair["long_b"],  pair["short_a"]),
+                ("second", "long",  pair["short_b"], pair["long_a"]),
+            ]
+
+            for pos, length, resp_a, resp_b in conditions:
                 key = (i, judge_name, pos, length)
-                if key in done_keys:   # Fix (week3): skip already-recorded rows
+                if key in done_keys:   # skip already-recorded rows
                     continue
 
                 winner = call_judge(judge_name, q, resp_a, resp_b)
@@ -83,18 +92,17 @@ def run_experiment(
                     "dataset":  dataset_tag,
                     "language": language_tag,
                 }
-                results.append(row)
                 done_keys.add(key)   # mark as done immediately
 
                 # Incremental save — never lose progress
                 with open(output_file, "a") as f:
                     f.write(json.dumps(row) + "\n")
 
-        print(f"  [OK] Pair {i+1}/{len(pairs)} done")
+            print(f"  [OK] {judge_name} — pair {i+1}/{len(pairs)}")
 
-    df = pd.DataFrame(results)
-    print(f"\nExperiment complete. {len(df)} rows saved to {output_file}")
-    return df
+    total = len(done_keys)
+    print(f"\nExperiment complete. {total} rows in {output_file}")
+
 
 
 if __name__ == "__main__":

@@ -1,2 +1,0 @@
-judge,dataset,total_attempted,invalid,valid,invalid_rate
-llama3-70b,mt_bench_ur,200,131,69,0.655

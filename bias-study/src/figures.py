@@ -26,13 +26,13 @@ FIG_DIR    = ROOT / "figures"
 FIG_DIR.mkdir(exist_ok=True)
 
 # ── Academic colour palette (colour-blind friendly) ───────────────────────────
-# week3-fixes: deepseek-flash replaces llama3-70b; mistral-small replaces gemini-flash
+# week4-final: 4 Ollama local + 1 Groq cloud
 PALETTE = {
-    "deepseek-flash": "#2E86AB",   # steel blue   (was llama3-70b)
-    "qwen3-32b":      "#E84855",   # coral red
-    "llama4-scout":   "#3BB273",   # emerald
-    "mistral-small":  "#F18F01",   # amber         (was gemini-flash)
-    "llama3-8b":      "#7B2D8B",   # purple
+    "qwen2.5":   "#2E86AB",   # steel blue  — Ollama 14B
+    "llama3-8b": "#E84855",   # coral red   — Ollama 8B
+    "gemma2-9b": "#3BB273",   # emerald     — Ollama 9B
+    "mistral":   "#F18F01",   # amber       — Ollama 7B Mistral
+    "qwen3-32b": "#7B2D8B",   # purple      — Groq 32B
 }
 JUDGE_ORDER = list(PALETTE.keys())
 

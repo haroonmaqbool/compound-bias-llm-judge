@@ -1,6 +1,0 @@
-judge,interaction_coef,interaction_p,classification
-gemini-flash,0.4323,0.0,super-additive
-llama3-70b,0.5868,0.0,super-additive
-llama3-8b,0.4226,0.0,super-additive
-llama4-scout,0.5677,0.0,super-additive
-qwen3-32b,0.4065,0.0,super-additive
