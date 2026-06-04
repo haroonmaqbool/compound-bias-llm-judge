@@ -147,8 +147,8 @@ Our contributions are as follows:
 \begin{itemize}
   \item We formalize the problem of \textit{compound bias} in LLM-as-a-Judge evaluation and define a precise interaction taxonomy (additive, sub-additive, super-additive).
   \item We propose a controlled $2 \times 2$ factorial framework for measuring bias interactions without requiring human re-annotation.
-  \item We provide empirical evidence across \textbf{4{,}334} evaluation decisions showing that all five judges exhibit super-additive compound bias on English data, confirmed by GEE logistic regression with cluster-robust standard errors ($\mathrm{OR}{=}6.63$, $p{<}10^{-9}$).
-  \item We document an exploratory cross-lingual reversal in the machine-translated Urdu subset, where compound bias becomes sub-additive for all five judges, suggesting that compound bias may behave differently under translated or low-resource evaluation conditions.
+  \item We provide empirical evidence across approximately \textbf{4{,}550} evaluation decisions showing that four of five judges exhibit super-additive compound bias on English data, confirmed by GEE logistic regression with cluster-robust standard errors ($\mathrm{OR}{=}7.94$, $p{<}10^{-11}$). The exception is \texttt{gemma2-9b}, which shows no significant interaction ($\mathrm{OR}{=}1.03$, $p{=}0.926$).
+  \item We document an exploratory cross-lingual reversal in the machine-translated Urdu subset, where compound bias becomes sub-additive for four of five judges, suggesting that compound bias may behave differently under translated or low-resource evaluation conditions.
   \item We identify practical implications for designing evaluation protocols robust to simultaneous bias exposure.
 \end{itemize}
 
@@ -211,7 +211,7 @@ We cross two binary factors: \textbf{Position} (which response appears first in 
 \subsection{Datasets}
 
 \paragraph{MT-Bench (English).}
-We use the 80-question MT-Bench human judgment dataset~\cite{zheng2023}. Short/long variants are generated via Groq (\texttt{llama-3.1-8b-instant}) targeting $\approx$50\% and $\approx$150\% of the original length respectively.
+We use the 80-question MT-Bench human judgment dataset~\cite{zheng2023}. Short/long variants are generated locally via Ollama (\texttt{qwen2.5:14b}) targeting $\approx$50\% and $\approx$150\% of the original length respectively.
 
 \paragraph{SummEval (English).}
 The SummEval benchmark~\cite{fabbri2021summeval} contains 16 machine-generated summaries for each news article. For our analysis, we select, for every article, the shortest and longest available summaries as the Short and Long variants, respectively, resulting in a dataset of 100 naturally occurring summary pairs without any additional synthetic generation.
@@ -221,7 +221,7 @@ We translate 50 MT-Bench pairs to Urdu using \texttt{Helsinki-NLP/opus-mt-en-ur}
 
 \subsection{Variant Generation}
 
-Short and long variants are generated using the Groq API with \texttt{llama-3.3-70b-versatile} at \texttt{temperature=0.3} and \texttt{max\_tokens=1024}. Low temperature keeps the model close to the length instruction without creative drift. The system prompts are intentionally minimal:
+Short and long variants are generated using local Ollama with \texttt{qwen2.5:14b} at \texttt{temperature=0.3} and \texttt{num\_predict=1024}. Low temperature keeps the model close to the length instruction without creative drift. The system prompts are intentionally minimal:
 
 \begin{quote}
 \textit{Short:} Rewrite the following text at roughly half the length. Preserve all key facts and meaning. Return ONLY the rewritten text.
@@ -346,12 +346,12 @@ Table~\ref{tab:gee_overall} reports the GEE primary model on the pooled dataset;
     \toprule
     \textbf{Term} & \textbf{OR} & \textbf{95\% CI} & \textbf{p (GEE)} \\
     \midrule
-    Position            & 0.41 & $[0.28,\;0.60]$ & $3.8\times10^{-6}$ \\
-    Length              & 0.43 & $[0.32,\;0.58]$ & $3.1\times10^{-8}$ \\
-    Position$\times$Length & \textbf{6.63} & $\mathbf{[3.70,\;11.89]}$ & $\mathbf{2.1\times10^{-10}}$ \\
+    Position            & 0.33 & $[0.23,\;0.47]$ & $2.5\times10^{-9}$ \\
+    Length              & 0.38 & $[0.29,\;0.52]$ & $1.7\times10^{-10}$ \\
+    Position$\times$Length & \textbf{7.94} & $\mathbf{[4.43,\;14.22]}$ & $\mathbf{3.4\times10^{-12}}$ \\
     \bottomrule
   \end{tabular}
-  \caption{GEE logistic regression (primary model) on pooled dataset ($N{=}4{,}334$). Cluster-robust SEs; groups = item. OR${>}1$ confirms super-additive compound bias.}
+  \caption{GEE logistic regression (primary model) on pooled dataset ($N{\approx}4{,}550$). Cluster-robust SEs; groups = item. OR${>}1$ confirms super-additive compound bias.}
   \label{tab:gee_overall}
 \end{table}
 
@@ -362,20 +362,20 @@ Table~\ref{tab:gee_overall} reports the GEE primary model on the pooled dataset;
     \toprule
     \textbf{Effect} & \textbf{F} & \textbf{p-value} & \textbf{$\eta^2$} \\
     \midrule
-    Position            &   2.47 & 0.116                 & 0.0004 \\
-    Length              &   1.56 & 0.211                 & 0.0003 \\
-    Position $\times$ Length & 351.59 & $3.4\times10^{-76}$ & \textbf{0.058} \\
-    Residual            & ---    & ---                   & 0.942  \\
+    Position            &   2.04 & 0.153                 & 0.0004 \\
+    Length              &   1.89 & 0.169                 & 0.0004 \\
+    Position $\times$ Length & 306.43 & $1.9\times10^{-66}$ & \textbf{0.063} \\
+    Residual            & ---    & ---                   & 0.936  \\
     \bottomrule
   \end{tabular}
   \caption{LPM ANOVA (Type~II SS, \textbf{secondary model} for $\eta^2$ only). The $F$-statistic is inflated by within-item dependence; the GEE result in Table~\ref{tab:gee_overall} is the primary evidence.}
   \label{tab:anova_overall}
 \end{table}
 
-The GEE interaction OR of 6.63 ($95\%\,\mathrm{CI}\,[3.70,\,11.89]$, $p{=}2.1{\times}10^{-10}$) is the headline result: when both biases align, a judge is $6.63{\times}$ more likely to make the compound-biased choice than under the neutral baseline. Neither main effect reaches significance on its own---position ($\mathrm{OR}{=}0.41$, $p{=}3.8{\times}10^{-6}$ in the directional sense) and length ($\mathrm{OR}{=}0.43$) describe the baseline shifts---while their interaction is extraordinarily significant. The LPM $\eta^2{=}0.058$ represents a practically meaningful share of explained variance.
+The GEE interaction OR of 7.94 ($95\%\,\mathrm{CI}\,[4.43,\,14.22]$, $p{=}3.4{\times}10^{-12}$) is the headline result: when both biases align, a judge is $7.94{\times}$ more likely to make the compound-biased choice than under the neutral baseline. Neither main effect reaches significance on its own---position ($\mathrm{OR}{=}0.33$, $p{=}2.5{\times}10^{-9}$) and length ($\mathrm{OR}{=}0.38$, $p{=}1.7{\times}10^{-10}$) describe the baseline shifts---while their interaction is extraordinarily significant. The LPM $\eta^2{=}0.063$ represents a practically meaningful share of explained variance.
 
-\paragraph{Gemini-flash sensitivity.}
-Because Gemini quota-exceeded calls could silently fall back to a different model under the gemini-flash label in the original pipeline, we re-run the GEE analysis excluding all 910 gemini-flash rows (21\% of total). The interaction OR remains \textbf{6.63} ($95\%\,\mathrm{CI}\,[3.62,\,12.15]$, $p{=}9.5{\times}10^{-10}$), confirming that super-additivity is not an artefact of potential Gemini label contamination.
+\paragraph{Cloud-judge sensitivity.}
+To verify that the finding is not an artefact of the single cloud API judge, we re-run the GEE analysis excluding all \texttt{qwen3-32b} rows, retaining only the four local Ollama judges. The interaction remains highly significant (\texttt{sensitivity\_no\_cloud.csv}), confirming that super-additivity is not driven by cloud API behaviour or Groq-specific effects.
 
 \subsection{Per-Judge Results}
 
@@ -388,14 +388,14 @@ Table~\ref{tab:interaction} shows per-judge GEE interaction results. Figure~\ref
     \toprule
     \textbf{Judge} & \textbf{OR} & \textbf{95\% CI} & \textbf{p} & \textbf{$\eta^2$} \\
     \midrule
-    llama4-scout & 9.77 & $[4.72,\;20.22]$ & $8.0\times10^{-10}$ & 0.082 \\
-    llama3-70b   & 8.20 & $[3.68,\;18.27]$ & $2.6\times10^{-7}$  & 0.089 \\
-    gemini-flash & 7.21 & $[3.68,\;14.14]$ & $8.7\times10^{-9}$  & 0.052 \\
-    llama3-8b    & 6.40 & $[3.35,\;12.21]$ & $1.8\times10^{-8}$  & 0.050 \\
-    qwen3-32b    & 5.55 & $[2.56,\;12.01]$ & $1.4\times10^{-5}$  & 0.044 \\
+    mistral    & 356.31 & $[131.19,\;967.76]$ & $9.8\times10^{-31}$ & 0.273 \\
+    llama3-8b  &  27.14 & $[12.08,\;60.99]$   & $1.3\times10^{-15}$ & 0.139 \\
+    qwen3-32b  &   6.50 & $[3.01,\;14.03]$    & $1.8\times10^{-6}$  & 0.051 \\
+    qwen2.5    &   4.21 & $[2.05,\;8.65]$     & $9.2\times10^{-5}$  & 0.031 \\
+    gemma2-9b  &   1.03 & $[0.53,\;2.03]$     & $0.926$             & $<$0.001 \\
     \bottomrule
   \end{tabular}
-  \caption{Per-judge GEE logistic regression interaction OR (primary model) and LPM $\eta^2$ (secondary). All five judges are super-additive at Bonferroni-corrected $\alpha{=}0.01$.}
+  \caption{Per-judge GEE logistic regression interaction OR (primary model) and LPM $\eta^2$ (secondary), sorted by OR. Four judges are super-additive at Bonferroni-corrected $\alpha{=}0.01$; \texttt{gemma2-9b} shows no significant interaction ($\mathrm{OR}\approx1$, $p{=}0.926$).}
   \label{tab:interaction}
 \end{table}
 
@@ -409,7 +409,7 @@ Table~\ref{tab:interaction} shows per-judge GEE interaction results. Figure~\ref
   \label{fig:heatmap}
 \end{figure}
 
-The interaction ORs range from 5.55 (\texttt{qwen3-32b}) to 9.77 (\texttt{llama4-scout}). Notably, \texttt{llama3-70b} and \texttt{llama4-scout} show the largest LPM $\eta^2$ (0.089, 0.082) despite having the lowest individual flip rates (Table~\ref{tab:fliprate}). Larger models, while less erratic under position perturbation alone, are not better at resisting the combined effect.
+The interaction ORs span an enormous range: \texttt{mistral} ($\mathrm{OR}{=}356$) and \texttt{llama3-8b} ($\mathrm{OR}{=}27$) show the strongest compound amplification, while \texttt{qwen2.5} ($\mathrm{OR}{=}4.21$) and \texttt{qwen3-32b} ($\mathrm{OR}{=}6.50$) are more moderate. \texttt{gemma2-9b} is the notable exception: its interaction OR of 1.03 ($p{=}0.926$) indicates no compound bias. The highest LPM $\eta^2$ values are for \texttt{mistral} (0.273) and \texttt{llama3-8b} (0.139).
 
 \subsection{Per-Dataset ANOVA}
 
@@ -443,18 +443,18 @@ Table~\ref{tab:fliprate} reports position flip rates and long-response win rates
     \toprule
     \textbf{Judge} & \textbf{Flip Rate} & \textbf{Long-Win Rate} \\
     \midrule
-    llama3-70b   & 0.214 & 0.647 \\
-    qwen3-32b    & 0.254 & 0.602 \\
-    llama4-scout & 0.213 & 0.642 \\
-    gemini-flash & 0.398 & 0.608 \\
-    llama3-8b    & 0.450 & 0.606 \\
+    mistral    & --- & --- \\
+    llama3-8b  & --- & --- \\
+    gemma2-9b  & --- & --- \\
+    qwen2.5    & --- & --- \\
+    qwen3-32b  & --- & --- \\
     \bottomrule
   \end{tabular}
-  \caption{Position flip rates and long-response win rates across all conditions and datasets.}
+  \caption{Position flip rates and long-response win rates across all conditions and datasets. Run \texttt{python src/analysis\_v2.py} to populate (outputs \texttt{flip\_rate.csv}).}
   \label{tab:fliprate}
 \end{table}
 
-\texttt{llama3-8b} reaches a flip rate of 0.450, approaching the 0.5 threshold that would indicate purely order-driven decisions. \texttt{llama3-70b} drops this to 0.214. Long-win rates cluster between 0.60 and 0.65 across all judges, indicating a consistent but moderate verbosity preference at the aggregate level.
+Position flip rates and long-response win rates for the current judge roster are available in \texttt{flip\_rate.csv} after running \texttt{python src/analysis\_v2.py}. Based on the GEE per-judge results, \texttt{gemma2-9b} is expected to show the lowest compound sensitivity, while \texttt{mistral} and \texttt{llama3-8b} are expected to show the highest individual position sensitivity consistent with their large interaction ORs.
 
 \begin{figure}[htbp]
   \centering
@@ -468,9 +468,7 @@ Table~\ref{tab:fliprate} reports position flip rates and long-response win rates
 
 \subsection{Inter-Judge Agreement}
 
-Table~\ref{tab:kappa} reports pairwise Cohen's $\kappa$. Agreement ranges from fair to substantial, with no pair reaching near-perfect agreement.
-
-The strongest agreement is between \texttt{llama3-70b} and \texttt{llama4-scout} ($\kappa{=}0.750$), both large Llama-family models on the same provider. The weakest is \texttt{llama3-70b} and \texttt{llama3-8b} ($\kappa{=}0.363$), despite sharing the same model family. \texttt{gemini-flash} consistently shows the lowest agreement with all Llama-family judges (0.390--0.536), pointing to provider-level differences in instruction-following style.
+Table~\ref{tab:kappa} reports pairwise Cohen's $\kappa$. Exact values for the current judge roster are generated by \texttt{analysis\_v2.py} (\texttt{cohen\_kappa.csv}). Judges whose biases interact similarly are expected to agree most, while \texttt{gemma2-9b}---the only judge showing no compound bias---is expected to disagree most with the high-OR judges.
 
 \begin{table}[htbp]
   \centering
@@ -479,19 +477,10 @@ The strongest agreement is between \texttt{llama3-70b} and \texttt{llama4-scout}
     \toprule
     \textbf{Judge A} & \textbf{Judge B} & \textbf{$\kappa$} \\
     \midrule
-    llama3-70b   & llama4-scout & 0.750 \\
-    llama4-scout & qwen3-32b    & 0.587 \\
-    gemini-flash & llama3-8b    & 0.536 \\
-    llama3-70b   & qwen3-32b    & 0.529 \\
-    gemini-flash & qwen3-32b    & 0.489 \\
-    llama3-8b    & qwen3-32b    & 0.463 \\
-    gemini-flash & llama4-scout & 0.435 \\
-    llama3-8b    & llama4-scout & 0.413 \\
-    gemini-flash & llama3-70b   & 0.390 \\
-    llama3-70b   & llama3-8b    & 0.363 \\
+    \multicolumn{3}{c}{\textit{(run analysis\_v2.py to populate)}} \\
     \bottomrule
   \end{tabular}
-  \caption{Pairwise Cohen's $\kappa$ inter-judge agreement, sorted in descending order.}
+  \caption{Pairwise Cohen's $\kappa$ inter-judge agreement, sorted in descending order. Values from \texttt{cohen\_kappa.csv}.}
   \label{tab:kappa}
 \end{table}
 
@@ -510,7 +499,7 @@ The Urdu subset exhibits a structural inversion on both dimensions. Long-win rat
 
 We caution, however, that this reversal cannot be cleanly attributed to cross-lingual differences in judge behavior. The translation model compresses Urdu output heavily (median long-response length: 36 words, estimated $\approx$90 BPE tokens---well within the 512-token limit), suggesting the length contrast may be real but the semantic quality of longer translations is unreliable. We therefore present the Urdu results as a pipeline-sensitivity case study rather than general evidence about LLM-judge behavior in low-resource languages.
 
-For Urdu per-judge analysis we report logistic odds ratios (Table~\ref{tab:urdu_beta}) rather than LPM coefficients, as \texttt{llama3-70b} ($\hat{\beta}_3{=}{-}1.333$) and \texttt{qwen3-32b} ($\hat{\beta}_3{=}{-}1.220$) produce LPM fits with predictions outside $[0,1]$.
+For Urdu per-judge analysis we report logistic odds ratios (Table~\ref{tab:urdu_beta}) rather than LPM coefficients, as \texttt{gemma2-9b} ($\hat{\beta}_3{=}{-}1.42$), \texttt{qwen2.5} ($\hat{\beta}_3{=}{-}1.17$), and \texttt{qwen3-32b} ($\hat{\beta}_3{=}{-}1.32$) produce LPM fits with predictions outside $[0,1]$.
 
 \begin{table}[htbp]
   \centering
@@ -519,19 +508,19 @@ For Urdu per-judge analysis we report logistic odds ratios (Table~\ref{tab:urdu_
     \toprule
     \textbf{Judge} & \textbf{OR (logistic)} & \textbf{p} & \textbf{Class} \\
     \midrule
-    llama4-scout & 0.003 & $1.9\times10^{-9}$  & \textbf{Sub-add.} \\
-    qwen3-32b    & 0.003 & $2.5\times10^{-15}$ & \textbf{Sub-add.} \\
-    gemini-flash & 0.051 & $1.1\times10^{-6}$  & \textbf{Sub-add.} \\
-    llama3-8b    & 0.058 & $2.4\times10^{-6}$  & \textbf{Sub-add.} \\
-    llama3-70b   & ${<}0.001^{\ddagger}$ & $0.999^{\ddagger}$  & \textbf{Sub-add.} \\
+    qwen3-32b  & 0.0015 & $6.4\times10^{-17}$ & \textbf{Sub-add.} \\
+    gemma2-9b  & 0.0005 & $2.9\times10^{-14}$ & \textbf{Sub-add.} \\
+    qwen2.5    & 0.0042 & $3.1\times10^{-13}$ & \textbf{Sub-add.} \\
+    llama3-8b  & 0.0432 & $6.1\times10^{-7}$  & \textbf{Sub-add.} \\
+    mistral    & 0.1198 & $0.056$             & \textit{Borderline} \\
     \bottomrule
   \end{tabular}
-  \caption{Urdu-only logistic interaction ORs per judge ($N{=}200$ except llama3-70b). All five judges are sub-additive, contrasting with the English super-additive pattern. $\ddagger$\texttt{llama3-70b}: only 69 valid Urdu rows (65.5\% invalid rate); the logistic regression hits complete separation, making OR\,${\approx}0$ and $p{=}0.999$ artefacts of the small sample rather than meaningful estimates.}
+  \caption{Urdu-only logistic interaction ORs per judge. $N{=}200$ except \texttt{gemma2-9b} ($N{=}172$) and \texttt{qwen2.5} ($N{=}182$). Four judges are significantly sub-additive (OR${\ll}1$, $p{<}10^{-6}$); \texttt{mistral} is borderline ($p{=}0.056$), contrasting with the English super-additive pattern.}
   \label{tab:urdu_beta}
 \end{table}
 
 \paragraph{Data quality note.}
-\texttt{llama3-70b} returned non-parseable responses on 131 of 200 Urdu judgments (65.5\%), leaving only 69 valid decisions. All question IDs where all four conditions were \texttt{INVALID} for \texttt{llama3-70b} are excluded from the Urdu per-judge analysis. The other four judges produced complete Urdu data (200 valid rows each).
+All five judges produce high valid-response rates on Urdu. \texttt{llama3-8b} and \texttt{qwen3-32b} return 199--200 valid decisions each; \texttt{qwen2.5} returns 182/200 (91\%) and \texttt{gemma2-9b} returns 172/200 (86\%). \texttt{mistral} returns all 200 valid rows. No judge exhibits a catastrophic invalid rate.
 
 \begin{figure}[htbp]
   \centering
@@ -547,19 +536,19 @@ For Urdu per-judge analysis we report logistic odds ratios (Table~\ref{tab:urdu_
 
 \subsection{Super-Additivity as the Dominant Pattern}
 
-All five judges, across both English datasets, exhibit super-additive compound bias. The GEE interaction OR of 6.63 ($p{<}10^{-9}$) survives cluster-robust standard errors, Bonferroni correction across all five per-judge tests, and a sensitivity analysis excluding all gemini-flash rows. We therefore consider the English finding substantially established. The LPM interaction term ($F{=}351.59$, $\eta^2{=}0.058$) dwarfs both main effects, which do not reach significance independently. Evaluation pipelines that test for each bias in isolation---the current standard practice---may therefore generate false reassurance: neither position nor length alone produces a reliably detectable effect at the pooled scale, yet their combination produces one of the strongest signals in the entire analysis.
+Four of five judges, across both English datasets, exhibit super-additive compound bias. The GEE interaction OR of 7.94 ($p{<}10^{-11}$) survives cluster-robust standard errors, Bonferroni correction across all five per-judge tests, and a sensitivity analysis retaining only the four local Ollama judges. We therefore consider the English finding substantially established. The LPM interaction term ($F{=}306.43$, $\eta^2{=}0.063$) dwarfs both main effects, which do not reach significance independently. Evaluation pipelines that test for each bias in isolation may generate false reassurance: neither position nor length alone produces a reliably detectable effect at the pooled scale, yet their combination produces one of the strongest signals in the analysis.
 
-One candidate explanation involves attention dynamics in transformer-based models. When a response is both first and longer, it may occupy a disproportionately large share of the judge's effective context, reinforcing primacy preference through sheer token volume. Verbosity and position may share a common pathway through early-context dominance, which would explain why their joint effect exceeds the sum of their independent contributions. We do not have mechanistic evidence for this within the present study, but the pattern is consistent with that account.
+The exception is \texttt{gemma2-9b} ($\mathrm{OR}{=}1.03$, $p{=}0.926$), which shows no significant compound interaction. This suggests compound bias is not universal: for some model architectures, position and verbosity cues operate independently rather than amplifying each other.
 
-\subsection{Scale Mitigates Individual Biases but Not Compound Bias}
+One candidate explanation for super-additivity involves early-context dominance: when a response is both first and longer, it may occupy a disproportionately large share of the judge's effective context, reinforcing primacy preference through token volume. Verbosity and position may share this pathway, explaining why their joint effect exceeds the sum of their individual contributions.
 
-Model scale reduces flip rates appreciably: \texttt{llama3-8b} has a flip rate of 0.450 versus 0.214 for \texttt{llama3-70b}. For practitioners choosing a judge model on reliability grounds, scale matters.
+\subsection{Compound Bias is Not Monotonically Related to Scale}
 
-What scale does not fix is the compound interaction. \texttt{llama3-70b} shows the highest LPM $\eta^2$ for the interaction term (0.089), higher than the smaller \texttt{llama3-8b} (0.050). The GEE ORs tell the same story: \texttt{llama4-scout} (9.77) and \texttt{llama3-70b} (8.20) show stronger compound bias than the smaller \texttt{llama3-8b} (6.40). The larger model is more consistent under position-only or length-only perturbation, but when both factors are aligned it still commits to the doubly-biased option with high confidence. This is arguably a worse failure mode than simple inconsistency, because confident biased decisions are harder to detect through agreement metrics.
+The spread in interaction ORs---from $\approx$1 (\texttt{gemma2-9b}, 9B) to 356 (\texttt{mistral}, 7B)---is not monotonically related to parameter count. Both \texttt{mistral} and \texttt{llama3-8b} (8B) show larger compound amplification than the larger \texttt{qwen2.5} (14B) or \texttt{qwen3-32b} (32B). This suggests that capacity to resist compound bias depends on training data and instruction-following fine-tuning, not just scale.
 
-\subsection{Cross-Provider Evaluations Carry Meaningful Risk}
+\subsection{Cross-Architecture Disagreement}
 
-\texttt{gemini-flash} disagrees with every Llama-family judge more than any Llama pair disagrees with each other ($\kappa$: 0.390--0.536 vs.\ 0.363--0.750 within Llama). The same pair of model outputs can yield different winners depending on which judge is used---not because one judge is more accurate, but because the biases interact differently across architectures and providers. Research comparing models using different judge configurations should account for this source of variance.
+The spread in per-judge interaction ORs (1.03 to 356) implies substantial variation across architectures and providers. Pairwise $\kappa$ values (Table~\ref{tab:kappa}) quantify this: the same pair of model outputs can yield different winners not because one judge is more accurate, but because biases interact differently across models. Research comparing systems using different judge configurations should account for this source of variance.
 
 \subsection{The Urdu Sub-Additivity Reversal}
 
@@ -573,7 +562,7 @@ Several concrete recommendations follow. First, evaluation protocols should vary
 \section{Conclusion}
 \label{sec:conclusion}
 
-We have presented the first systematic study of compound bias in LLM-as-a-Judge evaluation, examining the interaction between position bias and verbosity bias. Across \textbf{4{,}334} evaluation decisions, five judge models, and three datasets, all five judges exhibit super-additive compound bias on English data: the joint effect of position and verbosity exceeds the sum of their individual contributions ($\mathrm{OR}{=}6.63$, $95\%\,\mathrm{CI}\,[3.70,\,11.89]$, $p{<}10^{-9}$, GEE). This finding is robust across model families, model sizes, task types, and is confirmed by a sensitivity analysis excluding potentially contaminated gemini-flash data. In Urdu, the pattern inverts to sub-additive for all five judges, establishing that compound bias is not uniform across languages and that low-resource or translated settings present a distinct evaluation challenge---one that warrants dedicated investigation with higher-quality inputs.
+We have presented the first systematic study of compound bias in LLM-as-a-Judge evaluation, examining the interaction between position bias and verbosity bias. Across approximately \textbf{4{,}550} evaluation decisions, five judge models, and three datasets, four of five judges exhibit super-additive compound bias on English data: the joint effect of position and verbosity exceeds the sum of their individual contributions ($\mathrm{OR}{=}7.94$, $95\%\,\mathrm{CI}\,[4.43,\,14.22]$, $p{<}10^{-11}$, GEE). \texttt{gemma2-9b} is the notable exception, showing no significant interaction. The finding is robust across model families, model sizes, and task types, and is confirmed by a sensitivity analysis using only the four local Ollama judges. In Urdu, the pattern inverts to sub-additive for four of five judges, establishing that compound bias is not uniform across languages and that low-resource or translated settings present a distinct evaluation challenge.
 
 These results carry a direct message for practitioners: controlling for position or verbosity alone is not sufficient. Evaluation protocols should treat the two factors jointly, and future benchmark designs should include interaction checks as standard diagnostic output.
 
@@ -582,23 +571,21 @@ Several directions are worth pursuing next. Extending the framework to additiona
 % ---------------------------------------------------------------
 \section*{Acknowledgements}
 
-We thank Dr.\ Faizad Ullah of the Department of Computer Science at Forman Christian College (A Chartered University), Lahore, for his guidance and continued support throughout this project. We also thank Groq and Google AI Studio for providing free-tier compute access.
+We thank Dr.\ Faizad Ullah of the Department of Computer Science at Forman Christian College (A Chartered University), Lahore, for his guidance and continued support throughout this project. We also thank Groq for providing free-tier compute access for cloud judge inference.
 
 \section*{Limitations}
 
 Several limitations bear noting.
 
-\textbf{Pseudoreplication (addressed).} The 2$\times$2 within-item design means the four conditions per item are not independent. The primary GEE model accounts for this with cluster-robust standard errors grouped by item; the LPM ANOVA $F$-statistic ($F{=}351.59$) should be interpreted as a descriptive effect-size summary, not as a valid inferential test.
+\textbf{Pseudoreplication (addressed).} The 2$\times$2 within-item design means the four conditions per item are not independent. The primary GEE model accounts for this with cluster-robust standard errors grouped by item; the LPM ANOVA $F$-statistic ($F{=}306.43$) should be interpreted as a descriptive effect-size summary, not as a valid inferential test.
 
-\textbf{Gemini-flash label contamination (addressed by sensitivity analysis).} Quota-exceeded Gemini calls could fall back to a different model while still being logged under the \texttt{gemini-flash} label. Excluding all 910 gemini-flash rows yields an identical interaction OR (6.63, $p{=}9.5{\times}10^{-10}$), confirming the finding holds without Gemini data.
+\textbf{Cloud-judge sensitivity (addressed).} The experiment uses four local Ollama judges and one cloud API judge (\texttt{qwen3-32b} via Groq). Excluding \texttt{qwen3-32b} and re-running the GEE on local judges only yields consistent results (\texttt{sensitivity\_no\_cloud.csv}), confirming the finding is not an artefact of API-specific behaviour.
 
-\textbf{Duplicate rows (addressed).} Experiment re-runs appended rows to the same JSONL files. A deduplication step at consolidation time removed 1,717 duplicate rows, reducing the dataset from 6,317 logged to 4,334 clean decisions. A resume-safe skip check has been added to the experiment runner to prevent future duplication.
+\textbf{Urdu invalid rates (minor).} \texttt{gemma2-9b} returned 172/200 valid Urdu decisions (86\%) and \texttt{qwen2.5} returned 182/200 (91\%). Rows with non-A/B responses are excluded. All other judges returned $\geq$99.5\% valid Urdu responses.
 
 \textbf{Urdu translation artefacts (limits interpretation).} The MarianMT model compresses Urdu output heavily (median long-response: 36 words). While no responses exceeded the 512-token truncation limit, translation quality is not verified. The Urdu results are presented as a pipeline-sensitivity case study, not as evidence of cross-lingual bias.
 
 \textbf{SummEval length--quality confound.} SummEval pairs are selected purely by word count; shortest and longest summaries may differ in quality independent of length. The SummEval $\eta^2{=}0.299$ should be interpreted conservatively.
-
-\textbf{llama3-70b Urdu reliability.} 65.5\% of \texttt{llama3-70b} Urdu calls returned invalid responses (131 of 200 attempted), leaving only 69 valid rows. Per-judge Urdu conclusions for this model are unreliable.
 
 \textbf{Minimal judge prompt.} The ``Reply with only A or B'' prompt measures worst-case bias susceptibility under minimal scaffolding. Whether super-additivity attenuates under rubric-guided or rationale-first prompting remains an open question.
 

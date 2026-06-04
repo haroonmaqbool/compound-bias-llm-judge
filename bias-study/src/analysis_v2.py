@@ -1,22 +1,25 @@
-# src/analysis_v2.py — week3-fixes
-# Revised statistical analysis addressing peer-review feedback:
+# src/analysis_v2.py — week4-hybrid
+# Revised statistical analysis:
 #
 #  1. Primary model: GEE logistic regression with cluster-robust SEs (by qid)
-#     → fixes pseudoreplication / non-independence of the 4-condition within-item design
 #  2. Secondary: LPM ANOVA retained for η² variance decomposition only
-#  3. Gemini contamination sensitivity: full analysis re-run excluding gemini-flash
+#  3. Cloud-judge sensitivity: re-run excluding qwen3-32b (only Groq/API judge)
+#     to verify the result holds with local Ollama judges only
 #  4. Urdu truncation quantification: count long pairs that hit 512-token ceiling
 #  5. LPM β>1 check: flag and report odds ratios (from logistic) for Urdu per-judge
-#  6. llama3-70b Urdu invalid-rate sensitivity analysis
-#  7. Bonferroni correction (α_adj = 0.01 for 5 per-judge tests)
+#  6. Position flip rate and long-win rate per judge
+#  7. Pairwise Cohen's κ inter-judge agreement
+#  8. Bonferroni correction (α_adj = 0.01 for 5 per-judge tests)
 #
 # Outputs (results/tables/):
-#   gee_overall.csv          — GEE interaction results (primary model)
-#   gee_per_judge.csv        — GEE per-judge (primary)
-#   sensitivity_no_gemini.csv — ANOVA without gemini-flash rows
-#   urdu_truncation.csv      — count of truncated long Urdu responses
-#   anova_overall_v2.csv     — LPM ANOVA (secondary, for η²)
-#   anova_per_judge_v2.csv   — LPM per-judge (secondary, for η²)
+#   gee_overall.csv           — GEE interaction results (primary model)
+#   gee_per_judge.csv         — GEE per-judge (primary)
+#   sensitivity_no_cloud.csv  — GEE without qwen3-32b (local-only replication)
+#   urdu_truncation.csv       — count of truncated long Urdu responses
+#   anova_overall_v2.csv      — LPM ANOVA (secondary, for η²)
+#   anova_per_judge_v2.csv    — LPM per-judge (secondary, for η²)
+#   flip_rate.csv             — position flip rate and long-win rate per judge
+#   cohen_kappa.csv           — pairwise Cohen's κ inter-judge agreement
 #
 # Run: python src/analysis_v2.py
 
@@ -108,17 +111,17 @@ def run_anova(df: pd.DataFrame, label: str = "overall") -> pd.DataFrame:
                .rename(columns={"PR(>F)":"p_value"})
 
 
-# ── 3. Gemini contamination sensitivity ───────────────────────────────────────
-def gemini_sensitivity(df: pd.DataFrame) -> tuple:
+# ── 3. Cloud-judge sensitivity ───────────────────────────────────────────────
+def cloud_judge_sensitivity(df: pd.DataFrame) -> tuple:
     """
-    Returns (n_gemini_rows, results_without_gemini).
-    We cannot know exactly which gemini rows fell back to llama3-8b,
-    so the conservative approach is to exclude ALL gemini-flash rows.
-    If the interaction survives without them, the finding is robust.
+    Returns (n_cloud_rows, df_without_cloud).
+    Excludes qwen3-32b (the only Groq/API judge) and re-runs the analysis on
+    the 4 local Ollama judges only. If the interaction survives, super-additivity
+    is not an artefact of cloud API-specific behaviour or Groq rate-limit quirks.
     """
-    n_gemini = (df["judge"] == "gemini-flash").sum()
-    df_no_gem = df[df["judge"] != "gemini-flash"].copy()
-    return n_gemini, df_no_gem
+    n_cloud     = (df["judge"] == "qwen3-32b").sum()
+    df_no_cloud = df[df["judge"] != "qwen3-32b"].copy()
+    return n_cloud, df_no_cloud
 
 
 # ── 4. Urdu truncation quantification ────────────────────────────────────────
@@ -219,44 +222,57 @@ def urdu_lpm_check(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# ── 6. llama3-70b Urdu invalid-rate sensitivity ───────────────────────────────
-def llama70b_urdu_sensitivity(all_raw_rows: list) -> dict:
+# ── 6. Position flip rate and long-win rate ──────────────────────────────────
+def compute_flip_rates(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Count total attempted and invalid rows for llama3-70b on Urdu.
-    Uses the raw JSONL (including ERROR/INVALID) to get the true invalid rate.
+    Flip rate = fraction of (qid, length, dataset, language) pairs where the
+    judge's verdict differs between position=first and position=second.
+    Long-win rate = fraction of decisions where the longer response wins.
     """
-    urdu_file = ROOT / "results" / "raw" / "urdu_results.jsonl"
-    if not urdu_file.exists():
-        return {}
+    rows = []
+    for judge, jdf in df.groupby("judge"):
+        idx = ["qid", "length", "dataset", "language"]
+        first_s  = jdf[jdf["position"] == "first" ].set_index(idx)["winner"]
+        second_s = jdf[jdf["position"] == "second"].set_index(idx)["winner"]
+        common   = first_s.index.intersection(second_s.index)
+        flip_rate = (first_s.loc[common].values != second_s.loc[common].values).mean() \
+                    if len(common) > 0 else float("nan")
 
-    total = 0
-    invalid = 0
-    with open(urdu_file) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                row = json.loads(line)
-                if row.get("judge") == "llama3-70b":
-                    total += 1
-                    if row.get("winner") not in ("A", "B"):
-                        invalid += 1
-            except Exception:
-                pass
+        # Long wins: position=first + length=long → A is long → A wins
+        #            position=second + length=long → B is long → B wins
+        long_rows = jdf[jdf["length"] == "long"]
+        if len(long_rows) > 0:
+            long_win = (
+                ((long_rows["position"] == "first")  & (long_rows["winner"] == "A")) |
+                ((long_rows["position"] == "second") & (long_rows["winner"] == "B"))
+            ).mean()
+        else:
+            long_win = float("nan")
 
-    result = {
-        "judge": "llama3-70b",
-        "dataset": "mt_bench_ur",
-        "total_attempted": total,
-        "invalid": invalid,
-        "valid": total - invalid,
-        "invalid_rate": round(invalid / total, 4) if total > 0 else None,
-    }
-    print(f"\n── llama3-70b Urdu invalid-rate ─────────────────────────────────")
-    for k, v in result.items():
-        print(f"   {k}: {v}")
-    return result
+        rows.append({
+            "judge":         judge,
+            "flip_rate":     round(float(flip_rate), 3),
+            "long_win_rate": round(float(long_win),  3),
+        })
+    return pd.DataFrame(rows).sort_values("flip_rate", ascending=False).reset_index(drop=True)
+
+
+# ── 7. Pairwise Cohen's κ ────────────────────────────────────────────────────
+def compute_kappa(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Pairwise Cohen's κ on the subset of rows where ALL judges gave a valid A/B verdict.
+    """
+    judges = sorted(df["judge"].unique())
+    idx    = ["qid", "position", "length", "dataset", "language"]
+    pivot  = df.pivot_table(index=idx, columns="judge", values="winner", aggfunc="first")
+    pivot  = pivot.dropna()   # require all judges present
+
+    rows = []
+    for j1, j2 in itertools.combinations(judges, 2):
+        if j1 in pivot.columns and j2 in pivot.columns:
+            k = cohen_kappa_score(pivot[j1], pivot[j2])
+            rows.append({"judge_a": j1, "judge_b": j2, "kappa": round(k, 3)})
+    return pd.DataFrame(rows).sort_values("kappa", ascending=False).reset_index(drop=True)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -311,19 +327,19 @@ if __name__ == "__main__":
     anova_pj = pd.concat(anova_per_judge_dfs, ignore_index=True)
     anova_pj.to_csv(TABLES_DIR / "anova_per_judge_v2.csv", index=False)
 
-    # ── D. GEMINI SENSITIVITY ─────────────────────────────────────────────────
-    print("\n\n── D. Gemini-flash Contamination Sensitivity ────────────────────")
-    n_gemini, df_no_gem = gemini_sensitivity(df)
-    print(f"  gemini-flash rows excluded: {n_gemini:,} "
-          f"({100*n_gemini/len(df):.1f}% of total)")
-    print(f"  Remaining rows for sensitivity analysis: {len(df_no_gem):,}")
+    # ── D. CLOUD JUDGE SENSITIVITY ────────────────────────────────────────────
+    print("\n\n── D. Cloud-Judge Sensitivity (local Ollama judges only) ─────────")
+    n_cloud, df_no_cloud = cloud_judge_sensitivity(df)
+    print(f"  qwen3-32b rows excluded: {n_cloud:,} "
+          f"({100*n_cloud/len(df):.1f}% of total)")
+    print(f"  Remaining rows (4 local Ollama judges): {len(df_no_cloud):,}")
 
-    gee_no_gem = run_gee(df_no_gem, label="overall_no_gemini")
-    if not gee_no_gem.empty:
-        print("\n  GEE without gemini-flash:")
-        print(gee_no_gem[gee_no_gem["term"].str.contains(":")].to_string(index=False))
-        gee_no_gem.to_csv(TABLES_DIR / "sensitivity_no_gemini.csv", index=False)
-        print(f"  → Saved sensitivity_no_gemini.csv")
+    gee_no_cloud = run_gee(df_no_cloud, label="overall_no_cloud")
+    if not gee_no_cloud.empty:
+        print("\n  GEE without qwen3-32b (local judges only):")
+        print(gee_no_cloud[gee_no_cloud["term"].str.contains(":")].to_string(index=False))
+        gee_no_cloud.to_csv(TABLES_DIR / "sensitivity_no_cloud.csv", index=False)
+        print(f"  → Saved sensitivity_no_cloud.csv")
 
     # ── E. URDU TRUNCATION QUANTIFICATION ────────────────────────────────────
     print("\n\n── E. Urdu 512-Token Truncation Quantification ──────────────────")
@@ -346,17 +362,26 @@ if __name__ == "__main__":
         if n_exceed > 0:
             print(f"\n  ⚠ {n_exceed} judge(s) have |LPM β| > 1 — report ORs instead (see urdu_odds_ratios.csv)")
 
-    # ── G. llama3-70b URDU INVALID RATE ─────────────────────────────────────
-    print("\n\n── G. llama3-70b Urdu Invalid-Rate Sensitivity ──────────────────")
-    llama70b_res = llama70b_urdu_sensitivity([])
-    if llama70b_res:
-        pd.DataFrame([llama70b_res]).to_csv(
-            TABLES_DIR / "llama70b_urdu_invalid.csv", index=False)
-        print(f"  → Saved llama70b_urdu_invalid.csv")
+    # ── G. POSITION FLIP RATE AND LONG-WIN RATE ──────────────────────────────
+    print("\n\n── G. Position Flip Rate & Long-Win Rate ────────────────────────")
+    flip_df = compute_flip_rates(df)
+    print(flip_df.to_string(index=False))
+    flip_df.to_csv(TABLES_DIR / "flip_rate.csv", index=False)
+    print(f"  → Saved flip_rate.csv")
+
+    # ── H. PAIRWISE COHEN'S κ ─────────────────────────────────────────────────
+    print("\n\n── H. Pairwise Inter-Judge Agreement (Cohen's κ) ───────────────")
+    kappa_df = compute_kappa(df)
+    print(kappa_df.to_string(index=False))
+    kappa_df.to_csv(TABLES_DIR / "cohen_kappa.csv", index=False)
+    print(f"  → Saved cohen_kappa.csv")
 
     # ── SUMMARY ───────────────────────────────────────────────────────────────
     print("\n\n" + "=" * 65)
     print("  All outputs saved to results/tables/")
-    print("  Use gee_*.csv as primary model for paper revision.")
-    print("  Use anova_*_v2.csv for η² decomposition only.")
+    print("  Primary model:  gee_overall.csv / gee_per_judge.csv")
+    print("  Sensitivity:    sensitivity_no_cloud.csv")
+    print("  Flip rates:     flip_rate.csv")
+    print("  Agreement:      cohen_kappa.csv")
+    print("  η² only:        anova_*_v2.csv")
     print("=" * 65)

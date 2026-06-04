@@ -1,0 +1,2 @@
+total_long_variants,truncated_long_variants,truncation_pct,median_long_word_count,token_budget,word_budget_used
+100,0,0.0,36,512,205
