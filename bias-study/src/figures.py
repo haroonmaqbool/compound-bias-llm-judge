@@ -206,39 +206,106 @@ def fig2_bias_heatmap(df: pd.DataFrame):
 # Figure 3 — Position Flip-Rate Bar Chart per Judge
 # ─────────────────────────────────────────────────────────────────────────────
 def fig3_fliprate_bar(df: pd.DataFrame):
-    # Compute flip rate per judge (same logic as analysis.py)
-    pivot = (
-        df.pivot_table(
-            index=["dataset", "language", "qid", "judge", "length"],
-            columns="position",
-            values="winner",
-            aggfunc="first",
-        )
-        .dropna(subset=["first", "second"])
-        .reset_index()
+    required = {"dataset", "language", "qid", "judge", "position", "winner", "long_wins"}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        print(f"  ! Figure 3 skipped: missing required columns: {missing}")
+        print(f"    Available columns: {list(df.columns)}")
+        return
+
+    valid = df[df["winner"].isin(["A", "B"])].copy()
+    if valid.empty:
+        print("  ! Figure 3 skipped: no rows with winner in ['A', 'B'].")
+        print(f"    Input rows: {len(df):,}")
+        print(f"    Winner counts:\n{df['winner'].value_counts(dropna=False).to_string()}")
+        return
+
+    # Compute flip rate per judge. Do not include length in this pivot index:
+    # the position-swapped first/second rows can carry different length labels,
+    # so including length can keep the rows from matching.
+    flip_index = ["dataset", "language", "qid", "judge"]
+    duplicate_n = valid.duplicated(flip_index + ["position"]).sum()
+    raw_pivot = valid.pivot_table(
+        index=flip_index,
+        columns="position",
+        values="winner",
+        aggfunc="first",
     )
+    if raw_pivot.empty:
+        print("  ! Figure 3 skipped: flip pivot is empty before matching positions.")
+        print(f"    Valid rows: {len(valid):,}")
+        print(f"    Position counts:\n{valid['position'].value_counts(dropna=False).to_string()}")
+        return
+    if not {"first", "second"}.issubset(raw_pivot.columns):
+        print("  ! Figure 3 skipped: flip pivot does not contain both positions.")
+        print(f"    Pivot columns: {list(raw_pivot.columns)}")
+        print(f"    Position counts:\n{valid['position'].value_counts(dropna=False).to_string()}")
+        return
+
+    pivot = raw_pivot.dropna(subset=["first", "second"]).reset_index()
+    if pivot.empty:
+        print("  ! Figure 3 skipped: no matched first/second rows after pivot.")
+        print(f"    Valid rows: {len(valid):,}")
+        print(f"    Raw pivot rows: {len(raw_pivot):,}")
+        print(f"    Duplicate index+position rows collapsed by aggfunc='first': {duplicate_n:,}")
+        print(f"    Position counts:\n{valid['position'].value_counts(dropna=False).to_string()}")
+        print(f"    Rows per judge:\n{valid['judge'].value_counts(dropna=False).to_string()}")
+        return
+
+    # Assumption: winner stores the winning displayed slot ("A" or "B"), not
+    # the underlying response/model identity. With swapped presentation order,
+    # equal slots across first/second mean the judge followed position, so this
+    # counts as a position flip. If winner stores response identity, use !=.
     pivot["flip"] = (pivot["first"] == pivot["second"]).astype(int)
-    flip_df = pivot.groupby("judge")["flip"].mean().reset_index()
+    flip_df = pivot.groupby("judge", as_index=False)["flip"].mean()
     flip_df.columns = ["judge", "flip_rate"]
+    if flip_df.empty:
+        print("  ! Figure 3 skipped: per-judge flip dataframe is empty.")
+        print(f"    Matched pivot rows: {len(pivot):,}")
+        print(f"    Pivot judges: {sorted(pivot['judge'].dropna().unique())}")
+        return
 
-    # Also compute long-wins rate per judge (length bias)
-    long_df = df.groupby("judge")["long_wins"].mean().reset_index()
+    # Also compute long-response win rate per judge (length bias).
+    long_df = valid.groupby("judge", as_index=False)["long_wins"].mean()
     long_df.columns = ["judge", "long_bias"]
+    if long_df.empty:
+        print("  ! Figure 3 skipped: per-judge long-win dataframe is empty.")
+        print(f"    Valid rows: {len(valid):,}")
+        print(f"    Rows per judge:\n{valid['judge'].value_counts(dropna=False).to_string()}")
+        return
 
-    merged = flip_df.merge(long_df, on="judge")
-    merged = merged.set_index("judge").reindex(
-        [j for j in JUDGE_ORDER if j in merged.index]
-    ).reset_index()
+    merged = flip_df.merge(long_df, on="judge", how="inner")
+    if merged.empty:
+        print("  ! Figure 3 skipped: merged flip/long-win dataframe is empty.")
+        print(f"    Flip judges: {sorted(flip_df['judge'].dropna().unique())}")
+        print(f"    Long-win judges: {sorted(long_df['judge'].dropna().unique())}")
+        print(f"    Matched pivot rows: {len(pivot):,}")
+        print(f"    Duplicate index+position rows collapsed by aggfunc='first': {duplicate_n:,}")
+        return
+
+    ordered = [j for j in JUDGE_ORDER if j in set(merged["judge"])]
+    extras = [j for j in merged["judge"] if j not in JUDGE_ORDER]
+    merged = (
+        merged.set_index("judge")
+              .loc[ordered + extras]
+              .reset_index()
+    )
+    merged = merged.dropna(subset=["flip_rate", "long_bias"])
+    if merged.empty:
+        print("  ! Figure 3 skipped: final plotting dataframe is empty after ordering/dropna.")
+        print(f"    Flip dataframe:\n{flip_df.to_string(index=False)}")
+        print(f"    Long-win dataframe:\n{long_df.to_string(index=False)}")
+        return
 
     x    = np.arange(len(merged))
     w    = 0.38
     fig, ax = plt.subplots(figsize=(7, 4))
 
     bars1 = ax.bar(x - w/2, merged["flip_rate"], w,
-                   color=[PALETTE[j] for j in merged["judge"]],
+                   color=[PALETTE.get(j, "#666666") for j in merged["judge"]],
                    label="Position Flip Rate", alpha=0.85, edgecolor="white")
     bars2 = ax.bar(x + w/2, merged["long_bias"], w,
-                   color=[PALETTE[j] for j in merged["judge"]],
+                   color=[PALETTE.get(j, "#666666") for j in merged["judge"]],
                    label="Long-Response Win Rate", alpha=0.45, edgecolor="white",
                    hatch="//")
 
@@ -254,11 +321,13 @@ def fig3_fliprate_bar(df: pd.DataFrame):
     ax.yaxis.grid(True, alpha=0.3)
     ax.set_axisbelow(True)
 
-    # Value labels
-    for bar in list(bars1) + list(bars2):
-        h = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2, h + 0.01, f"{h:.2f}",
-                ha="center", va="bottom", fontsize=7.5, color="#333")
+    # Value labels only when bars exist and have finite heights.
+    if len(merged) > 0:
+        for bar in list(bars1) + list(bars2):
+            h = bar.get_height()
+            if np.isfinite(h):
+                ax.text(bar.get_x() + bar.get_width()/2, h + 0.01, f"{h:.2f}",
+                        ha="center", va="bottom", fontsize=7.5, color="#333")
 
     fig.tight_layout()
     caption = (
