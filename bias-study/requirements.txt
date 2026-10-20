@@ -1,0 +1,13 @@
+groq
+openai                  # used for DeepSeek + Mistral (both OAI-compatible APIs)
+transformers
+datasets
+scipy
+statsmodels
+pandas
+matplotlib
+seaborn
+sentencepiece
+torch
+python-dotenv
+scikit-learn
