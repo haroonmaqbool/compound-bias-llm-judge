@@ -1,0 +1,474 @@
+\documentclass[10pt,conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage[hyphens]{url}
+\def\UrlBreaks{\do\/\do-}
+
+\newcommand{\hb}{\hat{\beta}_3}
+
+\begin{document}
+
+\title{Position and Verbosity Bias in LLM Judges:\\ Implications for Validating AI-Enabled Software}
+
+\author{
+\IEEEauthorblockN{Muhammad Azmeer Farhan}
+\IEEEauthorblockA{\textit{Computer Science}\\
+\textit{Forman Christian College (A Chartered University)}\\
+Lahore, Pakistan\\
+muhammad.azmeer6551@gmail.com}
+\and
+\IEEEauthorblockN{Haroon Maqbool}
+\IEEEauthorblockA{\textit{Computer Science}\\
+\textit{Forman Christian College (A Chartered University)}\\
+Lahore, Pakistan\\
+haroon.1maqbool@gmail.com}
+\and
+\IEEEauthorblockN{Saria Mahmood}
+\IEEEauthorblockA{\textit{Computer Science}\\
+\textit{Forman Christian College (A Chartered University)}\\
+Lahore, Pakistan\\
+saria.mahmoodq@gmail.com}
+}
+
+\maketitle
+
+\begin{abstract}
+Large Language Models (LLMs) are increasingly used as automated evaluators when validating AI-enabled software, replacing or augmenting human judgment. If the judge is biased, the verification built on top of it is not trustworthy for the diverse users the software is meant to serve. Prior work has identified individual biases in such systems, but joint position--length patterns in such evaluations remain important to characterize. This paper investigates joint position--length patterns in LLM-as-a-Judge choices. We examine a $2\times2$ factorial design across 5 judge models, 3 datasets (MT-Bench, SummEval, Urdu MT-Bench), and 4,548 valid evaluation decisions to characterize joint position--length patterns in automated evaluation. Using GEE logistic regression with cluster-robust standard errors, we estimate a statistically significant position-by-length term: the pooled odds-scale interaction is positive (OR=7.94, 95\% CI [4.43, 14.22], $p=3.4\times10^{-12}$; descriptive LPM ANOVA: $F=306.43$, $p=1.9\times10^{-66}$, $\eta^2=0.063$), under the fitted log-odds specification. Because every evaluated pair contains one long and one short response, this term cannot be fully distinguished from a preference for the long response in the displayed slot; equal-length control pairs are needed to test a distinct behavioral interaction. Four of five judges show statistically significant positive odds-scale interactions after Bonferroni correction; \texttt{gemma2-9b} is the exception. A sensitivity analysis excluding \texttt{qwen3-32b}, the only cloud-hosted judge in our set, preserves the interaction (OR=8.38, $p=1.9\times10^{-13}$), showing that the pooled association persists without the cloud-hosted judge. In the machine-translated Urdu subset, the interaction reverses direction on the odds scale. We treat this translated-data pattern as exploratory because translation artefacts and response quality may influence the contrast. The project repository is listed at \url{https://github.com/haroonmaqbool/compound-bias-llm-judge}.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Large Language Models, LLM-as-Judge Evaluation, Position Bias, Verbosity Bias, Joint Position--Length Pattern, Trustworthy AI, Responsible Engineering, Evaluation Reliability
+\end{IEEEkeywords}
+
+%% ------------------------------------------------------------------
+\section{Introduction}
+The use of Large Language Models (LLMs) as automated evaluators has become a standard practice in modern natural language processing. This paradigm, commonly referred to as LLM-as-a-Judge, was formalized by Zheng et al.~\cite{zheng2023judging}, where strong models such as GPT-4 were used to compare outputs, assign scores, and replace expensive human annotation. Since then, the approach has been widely adopted in benchmarking, reward modeling, alignment pipelines, and content moderation systems.
+
+Despite its convenience and scalability, LLM-based judges are not neutral evaluators. They exhibit systematic biases that influence decisions in ways that are not always visible. One well-documented example is position bias: the model favors an answer based solely on whether it appears first or second in a pairwise prompt. Swapping response order can change the model's preference in a substantial fraction of cases~\cite{wang2024fair}. Another recurring issue is verbosity bias: longer responses tend to receive higher scores even when they are not more correct or more relevant~\cite{dubois2025lc}.
+
+Both biases have been studied, but almost always in isolation. In practice, however, they co-occur. A longer response might also happen to appear in the first position, leaving it unclear whether the model's preference reflects quality, length, placement, or some entanglement of all three. This observation motivates our central question: \emph{how do display position and response length jointly relate to LLM-judge choices?}
+
+That distinction has real consequences. Examining each cue separately may miss associations that emerge when both vary together, making interaction checks relevant to the quality assurance of AI-enabled software.
+
+\textbf{Relevance to trustworthy AI-enabled software.} As AI components are built into software that people with widely different needs and languages depend on, the quality checks for those components are themselves increasingly automated with LLM judges. A judge that is silently biased by response order and length weakens the verification and fairness assurances that responsible engineering of such software depends on, including when evaluation datasets do not adequately represent intended users. Our study treats the judge as a component of the engineering pipeline that must itself be verified, and it includes a machine-translated Urdu subset as an exploratory check of evaluation-pipeline sensitivity under machine translation.
+
+The three datasets are general-purpose benchmarks; we did not evaluate accessibility-specific tasks such as alt-text, captioning, or text simplification. Accordingly, the implications for inclusive software are prospective rather than experimentally demonstrated.
+
+To answer the central question, we run a $2\times2$ factorial experiment that varies response position and response length. For MT-Bench, short and long variants are generated from the same underlying response with instructions to preserve meaning; for SummEval, shortest and longest system summaries are used as a natural length-contrast setting.
+
+Our contributions are as follows:
+\begin{itemize}
+\item We study joint position--length effects in LLM-as-a-Judge evaluation and distinguish interactions on the odds and probability scales.
+\item We use a $2\times2$ factorial evaluation design to inspect how position and length cues jointly relate to judge choices without new human annotations.
+\item We provide empirical evidence across 4,548 valid evaluation decisions showing significant positive odds-scale interactions for four of five judges under GEE logistic regression with cluster-robust standard errors (OR=7.94, $p=3.4\times10^{-12}$). The fitted term cannot be separated from a preference for the long response in a given slot. The exception is \texttt{gemma2-9b}, which shows no significant interaction (OR=1.03, $p=0.926$).
+\item We document an exploratory cross-lingual reversal in the machine-translated Urdu subset, where the odds-scale interaction is negative and statistically significant for four of five judges; translation-related confounding precludes attributing this to language alone.
+\item We discuss safeguards for evaluating automated judges under jointly varied display position and response length.
+\end{itemize}
+
+%% ------------------------------------------------------------------
+\section{Related Work}
+\subsection{LLM-as-a-Judge Evaluation}
+The idea of using LLMs as evaluators was popularized by Zheng et al.~\cite{zheng2023judging}, who showed that GPT-4 can approximate human judgments in pairwise comparison tasks with reasonable agreement. This approach has since been integrated into MT-Bench, Chatbot Arena, and a range of downstream benchmarks. JudgeBench~\cite{tan2025judgebench} later formalized the meta-evaluation problem, evaluating the judges themselves, and exposed meaningful gaps in judge reliability across task types and difficulty levels.
+
+These systems offer real advantages in cost and scale, but they also bring a new class of problems. Unlike human annotators, LLM judges are sensitive to prompt framing, response ordering, and surface-level textual features in ways that human raters typically are not.
+
+\subsection{Position Bias}
+Position bias in LLM evaluation was systematically characterized by Wang et al.~\cite{wang2024fair}, who demonstrated that many LLM judges show strong primacy or recency preferences and that flipping response order can reverse a substantial fraction of decisions. Their work highlighted that this bias is not uniform across models: some judges show primacy preference, others recency preference, and the strength varies with model size and family. Position bias has also been observed in multiple-choice settings~\cite{zheng2023mcq}, where ordering effects compound with surface cues such as option labels.
+
+\subsection{Verbosity Bias}
+Verbosity bias was studied directly by Dubois et al.~\cite{dubois2025lc}, who found that longer model outputs receive systematically higher scores in automatic evaluation and proposed length-controlled variants of AlpacaEval to debias evaluation. Their analysis showed that verbosity can account for a meaningful share of win-rate differences between models, particularly when one model is tuned for output length. Related work cited in JudgeBench~\cite{tan2025judgebench} confirms that judges often rely on length as a proxy for quality in the absence of clearer discriminating features.
+
+\subsection{Robustness and Perturbation}
+Zheng et al.~\cite{zheng2023mcq} show that LLMs are sensitive to the ordering of options in multiple-choice settings, consistent with surface-level heuristic reliance.
+
+\subsection{Gaps in Existing Work}
+These studies motivate examining multiple evaluation cues jointly. Studies frequently analyze bias types separately; here we describe their joint association in a single evaluation design. In real deployment, biases do not arrive in isolation: a long response frequently appears first, or a short response appears second, creating conditions where position and verbosity effects could reinforce or counteract each other. This joint position--length pattern is what we describe here.
+
+%% ------------------------------------------------------------------
+\section{Experimental Design}
+\subsection{Hypotheses}
+We examine whether position and length cues interact in predicting the displayed response selected by the judge. In the primary logistic model (Eq.~\eqref{eq:gee}), the null hypothesis is $H_0:\beta_3=0$, indicating no interaction \emph{on the log-odds scale}. A positive fitted interaction coefficient ($\exp(\beta_3)>1$) or negative coefficient ($\exp(\beta_3)<1$) indicates the corresponding direction on that scale. The secondary linear probability model (Eq.~\eqref{eq:lpm}) describes interaction on the probability scale. These scales are not interchangeable: an odds ratio above one does not establish an amplified probability-scale effect, and a non-significant test does not establish equivalence or additivity.
+
+\subsection{$2\times2$ Factorial Structure}
+We cross two binary factors: \textbf{Position} (which response appears first in the prompt: \textsc{First}/\textsc{Second}) and \textbf{Length} (which response is longer: \textsc{Short}/\textsc{Long}). This yields four conditions per question--judge pair. Fig.~\ref{fig:design} illustrates the design.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.98\columnwidth]{fig1.png}
+\caption{Four response-pair conditions, explicitly labeled by the text shown in slots A and B. \texttt{short\_a}/\texttt{long\_a} are short/long rewrites of the original response A; \texttt{short\_b}/\texttt{long\_b} for response B.}
+\label{fig:design}
+\end{figure}
+
+\subsection{Datasets}
+\textbf{MT-Bench (English).} We use the 80-question MT-Bench human judgment dataset~\cite{zheng2023judging}. Short/long variants are generated locally via Ollama (\texttt{qwen2.5:14b}) targeting $\approx$50\% and $\approx$150\% of the original length respectively.
+
+\textbf{SummEval (English).} The SummEval benchmark~\cite{fabbri2021summeval} contains 16 machine-generated summaries for each news article. For our analysis, we select, for every article, the shortest and longest available summaries as the Short and Long variants, respectively, resulting in a dataset of 100 naturally occurring summary pairs without any additional synthetic generation.
+
+\textbf{MT-Bench (Urdu).} We translate 50 MT-Bench pairs to Urdu using \texttt{Helsinki-NLP/opus-mt-en-ur}~\cite{tiedemann2020opus}, a freely available transformer model. This provides an exploratory translated-data setting; it cannot isolate a language effect from translation quality.
+
+\subsection{Variant Generation}
+Short and long variants are generated using local Ollama with \texttt{qwen2.5:14b} at \texttt{temperature=0.3} and \texttt{num\_predict=1024}. Low temperature keeps the model close to the length instruction without creative drift. The system prompts are intentionally minimal:
+
+\begin{quote}\small
+\textit{Short:} Rewrite the following text at roughly half the length. Preserve all key facts and meaning. Return ONLY the rewritten text.
+
+\textit{Long:} Rewrite the following text at roughly 1.5$\times$ the length. Add relevant detail and explanation without inventing new facts. Return ONLY the rewritten text.
+\end{quote}
+
+The 50\% and 150\% targets are soft constraints expressed in the prompt. No hard token-trimming or padding is applied after generation. For MT-Bench, all four variants (\texttt{short\_a}, \texttt{long\_a}, \texttt{short\_b}, \texttt{long\_b}) are generated from the same original response, but the semantic equivalence of rewrites was not independently validated. For SummEval, real machine summaries are ranked by word count and the shortest/longest pair is selected only when their length ratio is at least $1.4\times$; pairs below this threshold are discarded.
+
+\begin{table}[t]
+\caption{Average word counts per condition and dataset.}
+\label{tab:words}
+\centering
+\footnotesize
+\begin{tabular}{@{}llll@{}}
+\toprule
+Dataset & Condition & Avg. Words & Notes \\
+\midrule
+MT-Bench & Short & $\approx$90 & $\approx$50\% of original \\
+MT-Bench & Original & $\approx$180 & From human judgments \\
+MT-Bench & Long & $\approx$270 & $\approx$150\% of original \\
+SummEval & Short & 40--60 & Shortest summary per article \\
+SummEval & Long & 80--120 & Ratio $\geq1.4\times$ enforced \\
+Urdu & All & 80--290 & MarianMT translations \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Implementation Details}
+\textbf{API calls and rate limiting.} Groq inference calls are separated by a fixed 0.4 second sleep between requests. Translation runs locally via \texttt{Helsinki-NLP/opus-mt-en-ur} on CPU with no external calls.
+
+\textbf{Key rotation and retries.} Multiple Groq API keys are supplied via a comma-separated \texttt{GROQ\_API\_KEYS} environment variable. A \texttt{KeyPool} class rotates to the next key on a daily-quota error and retries each key up to two times on per-minute rate limit errors. If all keys are exhausted the call returns \texttt{"ERROR"} without further backoff.
+
+\textbf{Failure and malformed-response handling.} Every judge call is wrapped in a safe dispatcher that returns \texttt{"ERROR"} on failure. Responses that do not parse to \texttt{"A"} or \texttt{"B"} are stored as \texttt{"INVALID"}. No re-prompting is attempted. Rows where \texttt{winner} is not \texttt{"A"} or \texttt{"B"} are excluded during consolidation. Duplicate rows from experiment re-runs are removed via a deduplication step at consolidation time, yielding 4,548 clean A/B decisions in the current master dataframe.
+
+\textbf{Logging and output.} Results are written to JSONL files incrementally after every judge call. Each record contains: \texttt{qid}, \texttt{judge}, \texttt{position}, \texttt{length}, \texttt{winner}, \texttt{dataset}, and \texttt{language}. Separate JSONL files are maintained per dataset and merged into a single master CSV for analysis.
+
+\textbf{Scale.} The full experiment comprises 1,600 judge calls for MT-Bench English, 2,000 for SummEval, and 1,000 for the Urdu subset, plus local variant-generation and translation runs. After deduplication and exclusion of invalid responses, the usable dataset contains 4,548 decisions: 1,595 MT-Bench English, 2,000 SummEval English, and 953 Urdu MT-Bench decisions.
+
+\subsection{Judge Models}
+Five judges are evaluated (Table~\ref{tab:judges}).
+
+\begin{table}[t]
+\caption{Judge models. Four judges run locally on a 16\,GB GPU via Ollama with exclusive VRAM access (\texttt{keep\_alive=0} between calls). One cloud judge uses the Groq free-tier API with automatic key rotation across 6 keys.}
+\label{tab:judges}
+\centering
+\footnotesize
+\begin{tabular}{@{}llll@{}}
+\toprule
+Judge ID & Model & Provider & Backend \\
+\midrule
+\texttt{qwen2.5} & Qwen2.5-14B & Ollama (local) & GPU \\
+\texttt{llama3-8b} & Llama-3-8B & Ollama (local) & GPU \\
+\texttt{gemma2-9b} & Gemma-2-9B & Ollama (local) & GPU \\
+\texttt{mistral} & Mistral-7B-v0.3 & Ollama (local) & GPU \\
+\texttt{qwen3-32b} & Qwen3-32B & Groq (free) & Cloud \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Procedure}
+Each (question, judge) pair is evaluated under all four conditions, giving $N=4{,}548$ clean decisions across all datasets and languages. The judge prompt asks: ``Which response is better? Reply with only `A' or `B'.''
+
+\subsection{Statistical Analysis}
+\textbf{Primary model: GEE logistic regression.} Because each item--judge pair is evaluated under all four conditions, the four observations share the same underlying item and are not independent. Treating them as independent inflates standard errors and produces pseudoreplication. We therefore use a Generalized Estimating Equation (GEE) logistic regression as our primary inferential model:
+\begin{equation}
+\begin{split}
+\mathrm{logit}(p_i) ={}& \beta_0+\beta_1P_i+\beta_2L_i\\
+&+\beta_3(P_i\times L_i),
+\end{split}
+\label{eq:gee}
+\end{equation}
+where $p_i=P(\text{chose\_A}_i)$, $P_i$ encodes position, and $L_i$ encodes length. We use an Exchangeable working-correlation structure and groups defined by item identifier. The GEE uses sandwich standard errors to address dependence among observations assigned to the same item identifier. Groups are reported as item identifiers; the current specification does not establish that dependence across judges evaluating the same question is modeled. We report odds ratios (ORs) and 95\% confidence intervals; an interaction OR\,$>1$ denotes a positive interaction on the odds scale, not necessarily amplification of probability differences.
+
+\textbf{Secondary model: LPM ANOVA for variance decomposition.} We additionally fit the equivalent linear probability model (LPM) via two-way OLS with Type~II sums of squares:
+\begin{equation}
+\begin{split}
+\text{chose\_A}_i ={}& \beta_0+\beta_1P_i+\beta_2L_i\\
+&+\beta_3(P_i\times L_i)+\varepsilon_i.
+\end{split}
+\label{eq:lpm}
+\end{equation}
+This specification is retained \emph{only} for reporting $\eta^2$ effect sizes, which are not available from GEE. The LPM interaction coefficient has a probability-scale interpretation, although its ordinary ANOVA $F$-tests do not adjust for repeated observations; we therefore treat the reported ANOVA $p$-values as descriptive rather than independent inferential confirmation. All five per-judge tests are corrected for multiple comparisons using Bonferroni adjustment ($\alpha_{\mathrm{adj}}=0.05/5=0.01$).
+
+For the Urdu per-judge analysis we report logistic odds ratios rather than LPM coefficients, because three judges (\texttt{gemma2-9b}, \texttt{qwen2.5}, and \texttt{qwen3-32b}) produce per-judge LPM fits with $|\hb|>1$, implying predicted probabilities outside $[0,1]$.
+
+%% ------------------------------------------------------------------
+\section{Results}
+\subsection{Overall Interaction Effect}
+Table~\ref{tab:gee} reports the GEE primary model on the pooled dataset; Table~\ref{tab:anova} gives the LPM ANOVA for $\eta^2$.
+
+\begin{table}[t]
+\caption{GEE logistic regression (primary model) on pooled dataset ($N=4{,}548$). Cluster-robust SEs; groups = item. Interaction OR\,$>1$ indicates a positive odds-scale interaction.}
+\label{tab:gee}
+\centering
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Term & OR & 95\% CI & $p$ (GEE) \\
+\midrule
+Position & 0.33 & [0.23, 0.47] & $2.5\times10^{-9}$ \\
+Length & 0.38 & [0.29, 0.52] & $1.7\times10^{-10}$ \\
+Position$\times$Length & \textbf{7.94} & [\textbf{4.43}, \textbf{14.22}] & $\mathbf{3.4\times10^{-12}}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\caption{LPM ANOVA (Type~II SS, secondary model for $\eta^2$ only). The ordinary $F$-test does not account for within-item dependence; the GEE result in Table~\ref{tab:gee} is the primary evidence.}
+\label{tab:anova}
+\centering
+\footnotesize
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Effect & $F$ & $p$-value & $\eta^2$ \\
+\midrule
+Position & 2.04 & 0.153 & 0.0004 \\
+Length & 1.89 & 0.169 & 0.0004 \\
+Position $\times$ Length & 306.43 & $1.9\times10^{-66}$ & \textbf{0.063} \\
+Residual & --- & --- & 0.936 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The GEE interaction OR of 7.94 (95\% CI [4.43, 14.22], $p=3.4\times10^{-12}$) is the headline result: the interaction multiplies the conditional odds ratio by 7.94 under the specified logistic coding. It is not a 7.94-fold probability shift. The position (OR=0.33, $p=2.5\times10^{-9}$) and length (OR=0.38, $p=1.7\times10^{-10}$) terms are also significant baseline shifts, but the fitted interaction term has the largest odds-ratio magnitude in this specification. The reported descriptive LPM effect size is $\eta^2=0.063$; its practical importance depends on the task and outcome scale.
+
+\textbf{Cloud-judge sensitivity.} To verify that the finding is not an artefact of the single cloud API judge, we re-run the GEE analysis excluding all \texttt{qwen3-32b} rows, retaining only the four local Ollama judges. The interaction remains highly significant (OR=8.38, 95\% CI [4.75, 14.76], $p=1.9\times10^{-13}$), indicating that the pooled odds-scale interaction also appears when the cloud API judge is excluded.
+
+\subsection{Per-Judge Results}
+Table~\ref{tab:perjudge} shows per-judge GEE interaction results. Fig.~\ref{fig:heatmap} visualises the response-A selection rate across all conditions.
+
+\begin{table}[t]
+\caption{Per-judge GEE logistic regression interaction OR (primary model) and LPM $\eta^2$ (secondary), sorted by OR. Four judges have significant positive odds-scale interactions at Bonferroni-corrected $\alpha=0.01$; \texttt{gemma2-9b} shows no significant interaction (OR\,$\approx1$, $p=0.926$).}
+\label{tab:perjudge}
+\centering
+\footnotesize
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Judge & OR & 95\% CI & $p$ & $\eta^2$ \\
+\midrule
+\texttt{mistral} & 356.31 & [131.19, 967.76] & $9.8\times10^{-31}$ & 0.273 \\
+\texttt{llama3-8b} & 27.14 & [12.08, 60.99] & $1.3\times10^{-15}$ & 0.139 \\
+\texttt{qwen3-32b} & 6.50 & [3.01, 14.03] & $1.8\times10^{-6}$ & 0.051 \\
+\texttt{qwen2.5} & 4.21 & [2.05, 8.65] & $9.2\times10^{-5}$ & 0.031 \\
+\texttt{gemma2-9b} & 1.03 & [0.53, 2.03] & 0.926 & $<0.001$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig2.png}
+\caption{Response-A selection rate ($P(\text{chose A})$) per judge and experimental condition. Values above 0.5 (red) indicate A-preference; below 0.5 (blue) indicate B-preference. The pattern provides a descriptive view of response-slot preferences; the fitted interaction is assessed separately.}
+\label{fig:heatmap}
+\end{figure}
+
+The interaction ORs span an enormous range: \texttt{mistral} (OR=356) and \texttt{llama3-8b} (OR=27) show the largest positive odds-scale interactions, while \texttt{qwen2.5} (OR=4.21) and \texttt{qwen3-32b} (OR=6.50) have smaller positive interaction estimates. \texttt{gemma2-9b} is the notable exception: its interaction OR of 1.03 ($p=0.926$) does not show a statistically detectable interaction in this analysis. The highest LPM $\eta^2$ values are for \texttt{mistral} (0.273) and \texttt{llama3-8b} (0.139).
+
+\subsection{Cross-Dataset ANOVA}
+Table~\ref{tab:dataset} breaks down the interaction term by dataset and language.
+
+\begin{table}[t]
+\caption{Dataset/language LPM ANOVA interaction term. Class labels reflect the sign of the reported LPM interaction coefficient, not a dependence-adjusted test.}
+\label{tab:dataset}
+\centering
+\footnotesize
+\begin{tabular}{@{}lcccl@{}}
+\toprule
+Subset & $F$ & $p$-value & $\eta^2$ & Class \\
+\midrule
+MT-Bench (English) & 161.05 & $3.2\times10^{-35}$ & 0.092 & Positive \\
+SummEval (English) & 898.34 & $2.7\times10^{-163}$ & 0.307 & Positive \\
+MT-Bench (Urdu) & 286.72 & $2.1\times10^{-56}$ & 0.232 & Negative \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+SummEval's English interaction effect ($\eta^2=0.307$) is the strongest positive interaction, followed by MT-Bench English ($\eta^2=0.092$). Urdu MT-Bench is also large, but its coefficient is negative, yielding the negative probability-scale interaction discussed in Section~\ref{sec:cross}. Pooling English and Urdu MT-Bench would therefore be misleading because the opposite-signed effects cancel. Note that the large SummEval $\eta^2$ may partly reflect a length--quality confound: the shortest and longest real summaries may differ in quality independent of length (over/under-compression), so this figure should be interpreted conservatively.
+
+\subsection{Position Flip Rate and Length Bias}
+Table~\ref{tab:flip} reports position flip rates and long-response win rates per judge. Flip rate is computed by matching position-swapped rows at the \texttt{dataset}, \texttt{language}, \texttt{qid}, and \texttt{judge} level. Because \texttt{winner} stores the displayed winning slot (\texttt{A} or \texttt{B}) and the reported matching index omits length, these flip rates are a descriptive order-sensitivity proxy rather than an isolated causal measure of position bias.
+
+\begin{table}[t]
+\caption{Reported flip and long-response win rates by judge. Position-swapped matches omit length from the matching index; see methodological caveat in text.}
+\label{tab:flip}
+\centering
+\footnotesize
+\begin{tabular}{@{}lcc@{}}
+\toprule
+Judge & Flip Rate & Long-Win Rate \\
+\midrule
+\texttt{qwen2.5} & 0.188 & 0.587 \\
+\texttt{llama3-8b} & 0.322 & 0.680 \\
+\texttt{gemma2-9b} & 0.235 & 0.502 \\
+\texttt{mistral} & 0.430 & 0.740 \\
+\texttt{qwen3-32b} & 0.239 & 0.611 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The highest reported position flip rate is observed for \texttt{mistral}, followed by \texttt{llama3-8b}. Long-response win rates are also strongest for \texttt{mistral} and \texttt{llama3-8b}, while \texttt{gemma2-9b} is closest to chance on the long-response metric.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig3.png}
+\caption{The dashed line marks 0.5 for reference. For long-response win rate, 0.5 is a parity reference; for flip rate it is a visual reference, not an established chance baseline.}
+\label{fig:flip}
+\end{figure}
+
+\subsection{Inter-Judge Agreement}
+Table~\ref{tab:kappa} reports pairwise Cohen's $\kappa$ on rows where both judges provide valid A/B verdicts under the same dataset, language, question, position, and length condition.
+
+\begin{table}[t]
+\caption{Pairwise Cohen's $\kappa$ inter-judge agreement, sorted in descending order.}
+\label{tab:kappa}
+\centering
+\footnotesize
+\begin{tabular}{@{}llc@{}}
+\toprule
+Judge A & Judge B & $\kappa$ \\
+\midrule
+\texttt{gemma2-9b} & \texttt{qwen2.5} & 0.638 \\
+\texttt{llama3-8b} & \texttt{mistral} & 0.587 \\
+\texttt{qwen2.5} & \texttt{qwen3-32b} & 0.568 \\
+\texttt{llama3-8b} & \texttt{qwen3-32b} & 0.532 \\
+\texttt{gemma2-9b} & \texttt{qwen3-32b} & 0.495 \\
+\texttt{llama3-8b} & \texttt{qwen2.5} & 0.468 \\
+\texttt{mistral} & \texttt{qwen3-32b} & 0.465 \\
+\texttt{mistral} & \texttt{qwen2.5} & 0.406 \\
+\texttt{gemma2-9b} & \texttt{llama3-8b} & 0.404 \\
+\texttt{gemma2-9b} & \texttt{mistral} & 0.315 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Cross-Dataset and Cross-Lingual Analysis}
+\label{sec:cross}
+\textbf{Position sensitivity.} Using the reported length-free matching procedure, Urdu MT-Bench shows the highest aggregate flip rate (0.321), followed by SummEval English (0.284) and MT-Bench English (0.258). The pattern is judge-specific: \texttt{mistral} flips especially often in Urdu (0.820), while \texttt{qwen3-32b} is highest on MT-Bench English (0.400) and much lower on SummEval (0.120).
+
+\textbf{Verbosity bias across datasets.} SummEval produces the strongest verbosity effect: aggregate long-win rate 0.777, with \texttt{mistral} reaching 0.855 and \texttt{qwen3-32b} reaching 0.818. MT-Bench English sits at 0.649 in aggregate. Real machine summaries vary considerably in length and detail, making length a more salient surface cue than in the more uniform MT-Bench responses.
+
+\textbf{Urdu: a cautionary artefact-sensitive case study.} The Urdu subset exhibits a structural inversion on both dimensions. Long-win rates drop to 0.174--0.330 per judge (aggregate 0.270), meaning the shorter Urdu response wins in roughly 73\% of judgments. One possible, unverified explanation is that \texttt{Helsinki-NLP/opus-mt-en-ur} introduces more translation artefacts in longer responses, potentially affecting judgments of longer translations. Crucially, the interaction also inverts direction: all five judges have Urdu interaction ORs below 1, with four significant and \texttt{mistral} borderline.
+
+We caution, however, that this reversal cannot be cleanly attributed to cross-lingual differences in judge behavior. The translation model compresses Urdu output heavily (median long-response length: 36 words, estimated $\approx$90 BPE tokens, well within the 512-token limit), suggesting the length contrast may be real but the semantic quality of longer translations is unreliable. We therefore present the Urdu results as a pipeline-sensitivity case study rather than general evidence about LLM-judge behavior in low-resource languages.
+
+For Urdu per-judge analysis we report logistic odds ratios (Table~\ref{tab:urdu}) rather than LPM coefficients, as \texttt{gemma2-9b} ($\hb=-1.42$), \texttt{qwen2.5} ($\hb=-1.17$), and \texttt{qwen3-32b} ($\hb=-1.32$) produce LPM fits with predictions outside $[0,1]$.
+
+\begin{table}[t]
+\caption{Urdu-only logistic interaction ORs per judge. $N=200$ except \texttt{gemma2-9b} ($N=172$) and \texttt{qwen2.5} ($N=182$). Four judges show significant negative odds-scale interactions (OR\,$\ll1$, $p<10^{-6}$); \texttt{mistral} is borderline ($p=0.056$), contrasting with the positive pooled odds-scale pattern.}
+\label{tab:urdu}
+\centering
+\footnotesize
+\begin{tabular}{@{}lccl@{}}
+\toprule
+Judge & OR (logistic) & $p$ & Class \\
+\midrule
+\texttt{qwen3-32b} & 0.0015 & $6.4\times10^{-17}$ & Negative \\
+\texttt{gemma2-9b} & 0.0005 & $2.9\times10^{-14}$ & Negative \\
+\texttt{qwen2.5} & 0.0042 & $3.1\times10^{-13}$ & Negative \\
+\texttt{llama3-8b} & 0.0432 & $6.1\times10^{-7}$ & Negative \\
+\texttt{mistral} & 0.1198 & 0.056 & \textit{Borderline} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Data quality note.} All five judges produce high valid-response rates on Urdu. \texttt{llama3-8b} and \texttt{qwen3-32b} return 199--200 valid decisions each; \texttt{qwen2.5} returns 182/200 (91\%) and \texttt{gemma2-9b} returns 172/200 (86\%). \texttt{mistral} returns all 200 valid rows. No judge exhibits a catastrophic invalid rate.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig4.png}
+\caption{Position flip rate (left) and long-response win rate (right) by dataset and language.}
+\label{fig:dataset}
+\end{figure}
+
+%% ------------------------------------------------------------------
+\section{Discussion}
+\subsection{Joint Position--Length Pattern in the Pooled Analysis}
+Four of five judges show positive and statistically significant odds-scale interaction estimates in the pooled analysis. The GEE interaction OR of 7.94 ($p=3.4\times10^{-12}$) survives cluster-robust standard errors, Bonferroni correction across all five per-judge tests, and a sensitivity analysis retaining only the four local Ollama judges. This provides evidence for a pooled odds-scale interaction under the reported specification, subject to the design and clustering limitations. The LPM interaction term ($F=306.43$, $\eta^2=0.063$) is far larger than either main-effect $\eta^2$. The design does not independently identify the mechanisms responsible for this observed association.
+
+The exception is \texttt{gemma2-9b} (OR=1.03, $p=0.926$), which shows no significant interaction. This does not establish that the two cues operate independently; the estimate remains uncertain.
+
+One possible, untested explanation for the observed pattern involves early-context dominance: when a response is both first and longer, it may occupy a disproportionately large share of the judge's effective context, reinforcing primacy preference through token volume. Verbosity and position may share this pathway, which could contribute to the observed interaction; this mechanism was not directly tested.
+
+\subsection{Observed Patterns Across Model Sizes}
+The spread in interaction ORs, from $\approx$1 (\texttt{gemma2-9b}, 9B) to 356 (\texttt{mistral}, 7B), is not monotonically related to parameter count. Both \texttt{mistral} and \texttt{llama3-8b} (8B) show larger positive interaction estimates than the larger \texttt{qwen2.5} (14B) or \texttt{qwen3-32b} (32B). With only five judges, these differences do not isolate the contribution of model size, training data, or instruction tuning.
+
+\subsection{Cross-Architecture Disagreement}
+The spread in per-judge interaction ORs (1.03 to 356) implies substantial variation across architectures and providers. Pairwise $\kappa$ values (Table~\ref{tab:kappa}) quantify this: the same pair of model outputs can yield different winners not because one judge is more accurate, but because judging behavior differs across model configurations. Research comparing systems using different judge configurations should account for this source of variance.
+
+\subsection{The Urdu Reversal}
+For Urdu, all odds ratios (ORs) for judge interactions drop below 1, and the model's preference shifts from long answers to short answers. These two descriptive changes are consistent with a negative odds-scale interaction in the translated subset, but do not establish why it occurs. Yet, as discussed in Section~\ref{sec:cross}, this shift may be an artifact of the translation process rather than a true cross-lingual difference in judge behavior. This motivates checking evaluation protocols under translation rather than assuming English-only observations transfer unchanged. Still, the present data cannot verify if this remains true when using better Urdu inputs.
+
+\subsection{Implications for Evaluation Design}
+Several concrete recommendations follow. First, evaluation protocols should vary position and length jointly, include equal-length control pairs, and report the observed response-slot and length effects separately where the design permits. Second, some tested judges have relatively high reported flip rates and long-response win rates; use of automated judges in consequential comparisons warrants validation. Third, comparisons between different model providers should be interpreted cautiously, since disagreements at the judge level might not reflect actual quality differences in the models being evaluated.
+
+\textbf{Implications for verification of AI-enabled software.} Taken together, these recommendations amount to treating the LLM judge as a component that needs its own verification. Engineering teams that rely on LLM judges to validate AI-enabled features should vary position and length jointly and include equal-length comparisons to assess slot preference separately. They should report these contrasts alongside the main metric and check conclusions before transferring them from English to translated or low-resource settings.
+
+\subsection{Limitations}
+Several limitations bear noting.
+
+\textbf{Pseudoreplication (partially mitigated).} The $2\times2$ within-item design means the four conditions per item are not independent. The reported GEE addresses dependence within item-identifier groups, but dependence across judges evaluating the same question is not established as modeled; the LPM ANOVA $F$-statistic ($F=306.43$) should be interpreted as a descriptive effect-size summary, not as a valid inferential test.
+
+\textbf{Cloud-judge sensitivity (partially mitigated).} The experiment uses four local Ollama judges and one cloud API judge (\texttt{qwen3-32b} via Groq). Excluding \texttt{qwen3-32b} and re-running the GEE on local judges only yields consistent results (OR=8.38, $p=1.9\times10^{-13}$), showing that the positive interaction remains in the local-only sensitivity analysis.
+
+\textbf{Urdu invalid rates (minor).} \texttt{gemma2-9b} returned 172/200 valid Urdu decisions (86\%) and \texttt{qwen2.5} returned 182/200 (91\%). Rows with non-A/B responses are excluded. All other judges returned $\geq$99.5\% valid Urdu responses.
+
+\textbf{Urdu translation artifacts (limits interpretation).} The MarianMT model compresses Urdu output heavily (median long-response: 36 words). Although no responses exceeded the 512-token truncation limit, translation quality was not verified. The Urdu results are presented as a pipeline-sensitivity case study, not as evidence of cross-lingual bias.
+
+\textbf{Position--length identifiability.} Every tested pair contains one short and one long response, without equal-length controls. Therefore, the fitted position-by-length term cannot be conclusively attributed to a separate behavioral interaction rather than a preference for the longer response in a particular display slot. The response-A selection pattern in Fig.~\ref{fig:heatmap} is consistent with this explanation. Equal-length pairs and a design that isolates response identity from display position are needed to distinguish these mechanisms.\par
+
+\textbf{Length--quality confounding.} SummEval pairs are selected purely by word count; shortest and longest summaries may differ in quality independent of length. The SummEval $\eta^2=0.307$ should be interpreted conservatively. MT-Bench rewrites were also not independently checked for quality equivalence.
+
+\textbf{Minimal judge prompt.} The ``Reply with only A or B'' prompt examines judge behavior under minimal scaffolding; it does not establish a worst-case bound. Whether the observed position--length pattern changes under rubric-guided or rationale-first prompting remains an open question.
+
+\textbf{Two bias types only.} Future work should examine calibration bias, sycophancy, and self-preference in compound settings.
+
+
+
+
+%% ------------------------------------------------------------------
+\section{Conclusion}
+We have presented an empirical study of joint position--length patterns in LLM-as-a-Judge evaluation. Across \textbf{4,548} valid evaluation decisions, five judge models, and three datasets, four of five judges show statistically significant positive odds-scale interactions; the pooled GEE interaction estimate is OR=7.94, 95\% CI [4.43, 14.22], $p=3.4\times10^{-12}$ (GEE). \texttt{gemma2-9b} is the notable exception, showing no significant interaction. The positive pooled interaction is also observed in the reported sensitivity analysis restricted to four local Ollama judges. In the translated Urdu subset, four of five judges show negative odds-scale interactions, highlighting sensitivity in the machine-translated evaluation pipeline, without establishing a language-driven effect.
+
+For evaluation practice, protocols should vary position and length jointly and include equal-length control pairs. The present estimates describe patterns in the tested comparisons, not independently identified interacting bias mechanisms.
+
+Several directions are worth pursuing next. Extending the framework to additional bias types, calibration bias, self-preference, and format sensitivity, would clarify whether the positive interaction pattern generalizes or is specific to the position--verbosity pairing. The Urdu reversal merits dedicated investigation with native-speaker-verified, length-balanced prompt pairs. Differences across the five model configurations motivate further controlled study of model size and training, including equal-length controls.
+
+\section*{Acknowledgements}
+We thank Dr.\ Faizad Ullah of the Department of Computer Science at Forman Christian College (A Chartered University), Lahore, for his guidance and continued support throughout this project.
+
+%% ------------------------------------------------------------------
+%% ------------------------------------------------------------------
+\begin{thebibliography}{99}
+
+\bibitem{zheng2023judging}
+L.~Zheng, W.-L.~Chiang, Y.~Sheng, S.~Zhuang, Z.~Wu, Y.~Zhuang, Z.~Lin, Z.~Li, D.~Li, E.~P.~Xing, H.~Zhang, J.~E.~Gonzalez, and I.~Stoica, ``Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena,'' in \emph{Proc. 37th Conf. Neural Information Processing Systems (NeurIPS)}, New Orleans, LA, USA, 2023.
+
+\bibitem{wang2024fair}
+P.~Wang, L.~Li, L.~Chen, Z.~Cai, D.~Zhu, B.~Lin, Y.~Cao, L.~Kong, Q.~Liu, T.~Liu, and Z.~Sui, ``Large Language Models are not Fair Evaluators,'' in \emph{Proc. 62nd Annual Meeting of the Association for Computational Linguistics (ACL)}, Bangkok, Thailand, Aug.\ 2024, pp.~9440--9450.
+
+\bibitem{fabbri2021summeval}
+A.~R.~Fabbri, W.~Kry\'sci\'nski, B.~McCann, C.~Xiong, R.~Socher, and D.~Radev, ``SummEval: Re-evaluating Summarization Evaluation,'' \emph{Transactions of the Association for Computational Linguistics}, vol.~9, pp.~391--409, Apr.\ 2021.
+
+\bibitem{tan2025judgebench}
+S.~Tan, S.~Zhuang, K.~Montgomery, W.~Y.~Tang, A.~Cuadron, C.~Wang, R.~A.~Popa, and I.~Stoica, ``JudgeBench: A Benchmark for Evaluating LLM-based Judges,'' arXiv preprint arXiv:2410.12784, 2025.
+
+\bibitem{zheng2023mcq}
+C.~Zheng, H.~Zhou, F.~Meng, J.~Zhou, and M.~Huang, ``Large Language Models Are Not Robust Multiple Choice Selectors,'' arXiv preprint arXiv:2309.03882, 2023.
+
+\bibitem{dubois2025lc}
+Y.~Dubois, B.~Galambosi, P.~Liang, and T.~B.~Hashimoto, ``Length-Controlled AlpacaEval: A Simple Way to Debias Automatic Evaluators,'' arXiv preprint arXiv:2404.04475, 2025.
+
+\bibitem{tiedemann2020opus}
+J.~Tiedemann and S.~Thottingal, ``OPUS-MT -- Building Open Translation Services for the World,'' in \emph{Proc. 22nd Annual Conf. European Association for Machine Translation (EAMT)}, Lisboa, Portugal, Nov.\ 2020, pp.~479--480.
+
+\end{thebibliography}
+
+\end{document}
